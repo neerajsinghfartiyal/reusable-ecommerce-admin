@@ -1,0 +1,13 @@
+import axiosClient from './axiosClient'
+
+export const getReturnRequests = (params = {}) =>
+  axiosClient.get('/api/returns', { params })
+
+export const getReturnRequestById = (id) => axiosClient.get(`/api/returns/${id}`)
+
+export const createReturnRequest = (data) => axiosClient.post('/api/returns', data)
+
+export const updateReturnRequestStatus = (id, data) =>
+  axiosClient.put(`/api/returns/${id}/status`, data)
+
+export const closeReturnRequest = (id) => axiosClient.delete(`/api/returns/${id}`)
