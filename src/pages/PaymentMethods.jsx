@@ -5,19 +5,24 @@ import {
   getPaymentMethods,
   updatePaymentMethod,
 } from '../api/paymentMethodApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import Pagination from '../components/ui/Pagination'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
+import PageLoading from '@/components/admin-ui/PageLoading'
 
 const typeOptions = ['online', 'offline', 'manual']
 const providerOptions = [
@@ -32,6 +37,33 @@ const providerOptions = [
 const typeFilters = ['all', ...typeOptions]
 const providerFilters = ['all', ...providerOptions]
 const statusFilters = ['all', 'active', 'inactive']
+
+const getTypeFilterLabel = (type) => {
+  if (type === 'all') {
+    return 'All types'
+  }
+
+  return type.charAt(0).toUpperCase() + type.slice(1)
+}
+
+const getProviderFilterLabel = (provider) => {
+  if (provider === 'all') {
+    return 'All providers'
+  }
+
+  return provider
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -381,34 +413,30 @@ function PaymentMethods() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Payment Methods"
-        description="Manage payment options available during checkout."
-      />
+    <AdminPage
+      headerMode="hidden"
+      title="Payment Methods"
+      description="Manage payment options available during checkout."
+    >
 
-      <ModuleCard title="Create Payment Method" className="mb-4">
+      <ModuleCard title="Create Payment Method">
         <form onSubmit={handleCreate}>
           <ModuleFormGrid columns={2}>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
+            <AdminField label="Name" required>
               <Input
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Code</label>
+            </AdminField>
+            <AdminField label="Code" description="Optional (auto-generated if empty)">
               <Input
                 value={form.code}
                 onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
                 placeholder="optional (auto-generated if empty)"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Type</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+            </AdminField>
+            <AdminField label="Type">
+              <AdminSelect
                 value={form.type}
                 onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value }))}
               >
@@ -417,12 +445,10 @@ function PaymentMethods() {
                     {type}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Provider</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+              </AdminSelect>
+            </AdminField>
+            <AdminField label="Provider">
+              <AdminSelect
                 value={form.provider}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, provider: event.target.value }))
@@ -433,19 +459,17 @@ function PaymentMethods() {
                     {provider}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Display Name</label>
+              </AdminSelect>
+            </AdminField>
+            <AdminField label="Display Name">
               <Input
                 value={form.displayName}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, displayName: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Sort Order</label>
+            </AdminField>
+            <AdminField label="Sort Order">
               <Input
                 type="number"
                 value={form.sortOrder}
@@ -453,9 +477,8 @@ function PaymentMethods() {
                   setForm((prev) => ({ ...prev, sortOrder: event.target.value }))
                 }
               />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
+            </AdminField>
+            <AdminField label="Description" className="md:col-span-2">
               <Textarea
                 rows={2}
                 value={form.description}
@@ -463,9 +486,8 @@ function PaymentMethods() {
                   setForm((prev) => ({ ...prev, description: event.target.value }))
                 }
               />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Instructions</label>
+            </AdminField>
+            <AdminField label="Instructions" className="md:col-span-2">
               <Textarea
                 rows={2}
                 value={form.instructions}
@@ -473,9 +495,8 @@ function PaymentMethods() {
                   setForm((prev) => ({ ...prev, instructions: event.target.value }))
                 }
               />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Allowed Countries (comma separated)</label>
+            </AdminField>
+            <AdminField label="Allowed Countries" description="Comma separated, e.g. US, IN, GB" className="md:col-span-2">
               <Input
                 value={form.allowedCountries}
                 onChange={(event) =>
@@ -483,9 +504,8 @@ function PaymentMethods() {
                 }
                 placeholder="US, IN, GB"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Minimum Order Amount</label>
+            </AdminField>
+            <AdminField label="Minimum Order Amount">
               <Input
                 type="number"
                 min="0"
@@ -495,9 +515,8 @@ function PaymentMethods() {
                   setForm((prev) => ({ ...prev, minOrderAmount: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Maximum Order Amount</label>
+            </AdminField>
+            <AdminField label="Maximum Order Amount">
               <Input
                 type="number"
                 min="0"
@@ -507,9 +526,8 @@ function PaymentMethods() {
                   setForm((prev) => ({ ...prev, maxOrderAmount: event.target.value }))
                 }
               />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Config JSON</label>
+            </AdminField>
+            <AdminField label="Config JSON" className="md:col-span-2">
               <Textarea
                 className="font-mono"
                 rows={5}
@@ -518,19 +536,19 @@ function PaymentMethods() {
                   setForm((prev) => ({ ...prev, configJson: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            </AdminField>
+            <AdminField label="Test Mode">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <Checkbox checked={form.testMode} onCheckedChange={(checked) => handleFormCheckChange('testMode', checked)} />
                 Test Mode
               </label>
-            </div>
-            <div>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            </AdminField>
+            <AdminField label="Active">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <Checkbox checked={form.isActive} onCheckedChange={(checked) => handleFormCheckChange('isActive', checked)} />
                 Active
               </label>
-            </div>
+            </AdminField>
             <div className="md:col-span-2 flex justify-end">
               <Button type="submit" size="sm" disabled={submitting}>
               {submitting ? 'Creating...' : 'Create Payment Method'}
@@ -540,81 +558,88 @@ function PaymentMethods() {
         </form>
       </ModuleCard>
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search payment methods..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search payment methods..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={typeFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setTypeFilter(event.target.value)
-          }}
-        >
-          {typeFilters.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
+        <AdminFilterField label="Type">
+          <AdminSelect
+            value={typeFilter}
+            aria-label="Filter by payment type"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setTypeFilter(event.target.value)
+            }}
+          >
+            {typeFilters.map((type) => (
+              <option key={type} value={type}>
+                {getTypeFilterLabel(type)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={providerFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setProviderFilter(event.target.value)
-          }}
-        >
-          {providerFilters.map((provider) => (
-            <option key={provider} value={provider}>
-              {provider}
-            </option>
-          ))}
-        </select>
+        <AdminFilterField label="Provider">
+          <AdminSelect
+            value={providerFilter}
+            aria-label="Filter by provider"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setProviderFilter(event.target.value)
+            }}
+          >
+            {providerFilters.map((provider) => (
+              <option key={provider} value={provider}>
+                {getProviderFilterLabel(provider)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading payment methods...</p>
-        </ModuleCard>
-      ) : null}
+      {loading ? <PageLoading message="Loading payment methods..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50">
-          <p className="text-sm text-blue-700">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
@@ -663,8 +688,7 @@ function PaymentMethods() {
                     </td>
                     <td>
                       {isEditing ? (
-                        <select
-                          className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+                        <AdminSelect
                           value={editForm.type}
                           onChange={(event) =>
                             setEditForm((prev) => ({ ...prev, type: event.target.value }))
@@ -675,15 +699,14 @@ function PaymentMethods() {
                               {type}
                             </option>
                           ))}
-                        </select>
+                        </AdminSelect>
                       ) : (
                         item?.type || '-'
                       )}
                     </td>
                     <td>
                       {isEditing ? (
-                        <select
-                          className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+                        <AdminSelect
                           value={editForm.provider}
                           onChange={(event) =>
                             setEditForm((prev) => ({ ...prev, provider: event.target.value }))
@@ -694,7 +717,7 @@ function PaymentMethods() {
                               {provider}
                             </option>
                           ))}
-                        </select>
+                        </AdminSelect>
                       ) : (
                         item?.provider || '-'
                       )}
@@ -780,16 +803,18 @@ function PaymentMethods() {
               }}
             />
 
-            <Pagination
+            <AdminPagination
               currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
               onPrevious={goPrev}
               onNext={goNext}
+              isPreviousDisabled={pagination.currentPage <= 1}
+              isNextDisabled={pagination.currentPage >= pagination.totalPages}
             />
           </>
         )
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

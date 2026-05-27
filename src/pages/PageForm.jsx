@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { createPage, getPageById, updatePage } from '../api/pageApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
+import { adminLinkButtonClass } from '@/components/admin-ui/adminStyles'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -8,7 +13,6 @@ import { Textarea } from '@/components/ui/textarea'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 
 const pageTypes = ['page', 'homepage', 'landing', 'policy', 'blog', 'custom']
 const statuses = ['draft', 'published']
@@ -130,6 +134,18 @@ function PageForm() {
     [isEditMode],
   )
 
+  const backAction = (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className={adminLinkButtonClass}
+      onClick={() => navigate('/pages')}
+    >
+      Back to Pages
+    </Button>
+  )
+
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -237,72 +253,51 @@ function PageForm() {
 
   if (loading) {
     return (
-      <section>
-        <ModuleHeader
-          title={pageTitle}
-          description={pageDescription}
-          actions={
-            <Button type="button" size="sm" variant="ghost" onClick={() => navigate('/pages')}>
-              Back to Pages
-            </Button>
-          }
-        />
+      <AdminPage headerMode="compact" title={pageTitle} description={pageDescription} actions={backAction}>
         <ModuleCard>
-          <p className="text-sm text-slate-600">Loading page...</p>
+          <AdminAlert type="info" title="Loading">
+            Loading page...
+          </AdminAlert>
         </ModuleCard>
-      </section>
+      </AdminPage>
     )
   }
 
   return (
-    <section>
-      <ModuleHeader
-        title={pageTitle}
-        description={pageDescription}
-        actions={
-          <Button type="button" size="sm" variant="ghost" onClick={() => navigate('/pages')}>
-            Back to Pages
-          </Button>
-        }
-      />
-
+    <AdminPage headerMode="compact" title={pageTitle} description={pageDescription} actions={backAction}>
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {sectionError ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{sectionError}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Section validation">
+          {sectionError}
+        </AdminAlert>
       ) : null}
 
       <form onSubmit={handleSubmit}>
         <ModuleCard title="Page Details">
           <ModuleFormGrid columns={2}>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Title</label>
+            <AdminField label="Title" required>
               <Input
                 type="text"
                 value={form.title}
                 onChange={(event) => handleFormChange('title', event.target.value)}
               />
-            </div>
+            </AdminField>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Slug</label>
+            <AdminField label="Slug" required>
               <Input
                 type="text"
                 value={form.slug}
                 onChange={(event) => handleFormChange('slug', event.target.value)}
               />
-            </div>
+            </AdminField>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Page Type</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+            <AdminField label="Page Type">
+              <AdminSelect
                 value={form.pageType}
                 onChange={(event) => handleFormChange('pageType', event.target.value)}
               >
@@ -311,13 +306,11 @@ function PageForm() {
                     {type}
                   </option>
                 ))}
-              </select>
-            </div>
+              </AdminSelect>
+            </AdminField>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+            <AdminField label="Status">
+              <AdminSelect
                 value={form.status}
                 onChange={(event) => handleFormChange('status', event.target.value)}
               >
@@ -326,52 +319,50 @@ function PageForm() {
                     {status}
                   </option>
                 ))}
-              </select>
-            </div>
+              </AdminSelect>
+            </AdminField>
 
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">SEO Title</label>
+            <AdminField label="SEO Title" className="md:col-span-2">
               <Input
                 type="text"
                 value={form.seoTitle}
                 onChange={(event) => handleFormChange('seoTitle', event.target.value)}
               />
-            </div>
+            </AdminField>
 
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">SEO Description</label>
+            <AdminField label="SEO Description" className="md:col-span-2">
               <Textarea
                 rows={3}
                 value={form.seoDescription}
                 onChange={(event) => handleFormChange('seoDescription', event.target.value)}
               />
-            </div>
+            </AdminField>
 
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                SEO Keywords (comma separated)
-              </label>
+            <AdminField
+              label="SEO Keywords"
+              description="Comma separated"
+              className="md:col-span-2"
+            >
               <Input
                 type="text"
                 value={form.seoKeywords}
                 onChange={(event) => handleFormChange('seoKeywords', event.target.value)}
               />
-            </div>
+            </AdminField>
 
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-700">Featured Image URL</label>
+            <AdminField label="Featured Image" className="md:col-span-2">
               <Input
                 type="text"
                 value={form.featuredImage}
                 onChange={(event) => handleFormChange('featuredImage', event.target.value)}
                 placeholder="https://..."
               />
-            </div>
+            </AdminField>
           </ModuleFormGrid>
         </ModuleCard>
 
         <div className="my-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">Sections</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Sections</h2>
           <Button type="button" size="sm" variant="secondary" onClick={addSection}>
             Add Section
           </Button>
@@ -380,8 +371,7 @@ function PageForm() {
         {sections.map((section, index) => (
           <ModuleCard key={`section-${index}`} title={`Section ${index + 1}`}>
             <ModuleFormGrid columns={2}>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Section Key</label>
+              <AdminField label="Section Key">
                 <Input
                   type="text"
                   value={section.sectionKey}
@@ -389,10 +379,9 @@ function PageForm() {
                     handleSectionChange(index, 'sectionKey', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Section Type</label>
+              <AdminField label="Section Type">
                 <Input
                   type="text"
                   value={section.sectionType}
@@ -400,19 +389,17 @@ function PageForm() {
                     handleSectionChange(index, 'sectionType', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Heading</label>
+              <AdminField label="Heading">
                 <Input
                   type="text"
                   value={section.heading}
                   onChange={(event) => handleSectionChange(index, 'heading', event.target.value)}
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Subheading</label>
+              <AdminField label="Subheading">
                 <Input
                   type="text"
                   value={section.subheading}
@@ -420,10 +407,9 @@ function PageForm() {
                     handleSectionChange(index, 'subheading', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
+              <AdminField label="Description" className="md:col-span-2">
                 <Textarea
                   rows={3}
                   value={section.description}
@@ -431,19 +417,17 @@ function PageForm() {
                     handleSectionChange(index, 'description', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Image URL</label>
+              <AdminField label="Image">
                 <Input
                   type="text"
                   value={section.image}
                   onChange={(event) => handleSectionChange(index, 'image', event.target.value)}
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Button Text</label>
+              <AdminField label="Button Text">
                 <Input
                   type="text"
                   value={section.buttonText}
@@ -451,10 +435,9 @@ function PageForm() {
                     handleSectionChange(index, 'buttonText', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Button Link</label>
+              <AdminField label="Button Link">
                 <Input
                   type="text"
                   value={section.buttonLink}
@@ -462,10 +445,9 @@ function PageForm() {
                     handleSectionChange(index, 'buttonLink', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Sort Order</label>
+              <AdminField label="Sort Order">
                 <Input
                   type="number"
                   min="0"
@@ -474,22 +456,21 @@ function PageForm() {
                     handleSectionChange(index, 'sortOrder', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
 
-              <div className="md:col-span-2">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
+              <AdminField label="Active" className="md:col-span-2">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                   <Checkbox
                     checked={Boolean(section.isActive)}
                     onCheckedChange={(checked) =>
                       handleSectionChange(index, 'isActive', checked === true)
                     }
                   />
-                  Is Active
+                  Active
                 </label>
-              </div>
+              </AdminField>
 
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-slate-700">contentJson</label>
+              <AdminField label="Content JSON" className="md:col-span-2">
                 <Textarea
                   className="cms-json-textarea"
                   rows={6}
@@ -498,7 +479,7 @@ function PageForm() {
                     handleSectionChange(index, 'contentJson', event.target.value)
                   }
                 />
-              </div>
+              </AdminField>
             </ModuleFormGrid>
 
             <ModuleActions className="mt-4 justify-end">
@@ -516,7 +497,13 @@ function PageForm() {
         ))}
 
         <ModuleActions className="justify-end">
-          <Button type="button" size="sm" variant="ghost" onClick={() => navigate('/pages')}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={adminLinkButtonClass}
+            onClick={() => navigate('/pages')}
+          >
             Back to Pages
           </Button>
           <Button type="submit" size="sm" disabled={saving}>
@@ -524,7 +511,7 @@ function PageForm() {
           </Button>
         </ModuleActions>
       </form>
-    </section>
+    </AdminPage>
   )
 }
 

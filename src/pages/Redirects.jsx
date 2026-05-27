@@ -5,22 +5,43 @@ import {
   getRedirects,
   updateRedirect,
 } from '../api/redirectApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import Pagination from '../components/ui/Pagination'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-
+import PageLoading from '@/components/admin-ui/PageLoading'
 const redirectTypeFilters = ['all', '301', '302']
 const statusFilters = ['all', 'active', 'inactive']
+
+const getRedirectTypeFilterLabel = (type) => {
+  if (type === 'all') {
+    return 'All redirect types'
+  }
+
+  return type
+}
+
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+const redirectTypeOptions = ['301', '302']
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -305,17 +326,15 @@ function Redirects() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Redirects"
-        description="Manage SEO redirects from old URLs to new destinations."
-      />
-
-      <ModuleCard title="Create Redirect" className="mb-4">
+    <AdminPage
+      headerMode="hidden"
+      title="Redirects"
+      description="Manage SEO redirects from old URLs to new destinations."
+    >
+      <ModuleCard title="Create Redirect">
         <form onSubmit={handleCreate}>
           <ModuleFormGrid columns={2}>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Source Path</label>
+            <AdminField label="Source Path" required>
               <Input
                 value={form.sourcePath}
                 onChange={(event) =>
@@ -323,10 +342,9 @@ function Redirects() {
                 }
                 placeholder="/old-url"
               />
-            </div>
+            </AdminField>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Target Path</label>
+            <AdminField label="Target Path" required>
               <Input
                 value={form.targetPath}
                 onChange={(event) =>
@@ -334,107 +352,112 @@ function Redirects() {
                 }
                 placeholder="/new-url"
               />
-            </div>
+            </AdminField>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Redirect Type</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+            <AdminField label="Redirect Type">
+              <AdminSelect
                 value={form.redirectType}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, redirectType: event.target.value }))
                 }
               >
-                <option value="301">301</option>
-                <option value="302">302</option>
-              </select>
-            </div>
+                {redirectTypeOptions.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </AdminSelect>
+            </AdminField>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
+            <AdminField label="Notes">
               <Input
                 value={form.notes}
                 onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
                 placeholder="Optional notes"
               />
-            </div>
+            </AdminField>
 
-            <div className="md:col-span-2">
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            <AdminField label="Active" className="md:col-span-2">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <Checkbox checked={form.isActive} onCheckedChange={handleFormCheckChange} />
                 Active
               </label>
-            </div>
+            </AdminField>
 
-          <div className="md:col-span-2 flex justify-end">
-            <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? 'Creating...' : 'Create Redirect'}
-            </Button>
-          </div>
+            <div className="md:col-span-2 flex justify-end">
+              <Button type="submit" size="sm" disabled={submitting}>
+                {submitting ? 'Creating...' : 'Create Redirect'}
+              </Button>
+            </div>
           </ModuleFormGrid>
         </form>
       </ModuleCard>
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search redirects..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search redirects..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={redirectTypeFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setRedirectTypeFilter(event.target.value)
-          }}
-        >
-          {redirectTypeFilters.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
+        <AdminFilterField label="Redirect Type">
+          <AdminSelect
+            value={redirectTypeFilter}
+            aria-label="Filter by redirect type"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setRedirectTypeFilter(event.target.value)
+            }}
+          >
+            {redirectTypeFilters.map((type) => (
+              <option key={type} value={type}>
+                {getRedirectTypeFilterLabel(type)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading redirects...</p>
-        </ModuleCard>
-      ) : null}
+      {loading ? <PageLoading message="Loading redirects..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50">
-          <p className="text-sm text-blue-700">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
@@ -456,7 +479,7 @@ function Redirects() {
                 const statusText = redirect?.isActive ? 'active' : 'inactive'
 
                 return (
-                  <tr key={id}>
+                  <tr key={id} className="text-slate-700 dark:text-slate-300">
                     <td>
                       {isEditing ? (
                         <Input
@@ -489,8 +512,7 @@ function Redirects() {
                     </td>
                     <td>
                       {isEditing ? (
-                        <select
-                          className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+                        <AdminSelect
                           value={editForm.redirectType}
                           onChange={(event) =>
                             setEditForm((prev) => ({
@@ -499,9 +521,12 @@ function Redirects() {
                             }))
                           }
                         >
-                          <option value="301">301</option>
-                          <option value="302">302</option>
-                        </select>
+                          {redirectTypeOptions.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </AdminSelect>
                       ) : (
                         getNumberValue(redirect?.redirectType, 301)
                       )}
@@ -509,7 +534,7 @@ function Redirects() {
                     <td>
                       {isEditing ? (
                         <div>
-                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                             <Checkbox checked={editForm.isActive} onCheckedChange={handleEditCheckChange} />
                             Active
                           </label>
@@ -573,16 +598,18 @@ function Redirects() {
               }}
             />
 
-            <Pagination
+            <AdminPagination
               currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
               onPrevious={goPrev}
               onNext={goNext}
+              isPreviousDisabled={pagination.currentPage <= 1}
+              isNextDisabled={pagination.currentPage >= pagination.totalPages}
             />
           </>
         )
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

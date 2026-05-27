@@ -1,8 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getStoreSettings, updateStoreSettings } from '../api/storeSettingApi'
-import PageHeader from '../components/ui/PageHeader'
-import AdminCard from '../components/ui/AdminCard'
-import ActionButton from '../components/ui/ActionButton'
+import { applyBrandingFromSettings, extractSettingsPayload } from '@/components/admin-shell/branding-config'
+import {
+  assetFromPickerSelection,
+  featuredMediaFromUrl,
+  MediaPickerModal,
+  SelectedImagePreview,
+} from '@/components/media-picker'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import ModuleActions from '@/components/admin-ui/ModuleActions'
+import ModuleCard from '@/components/admin-ui/ModuleCard'
+import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -84,6 +98,9 @@ function StoreSettings() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [logoPickerOpen, setLogoPickerOpen] = useState(false)
+  const [logoPickerTab, setLogoPickerTab] = useState('library')
+  const [logoPickerSnapshot, setLogoPickerSnapshot] = useState([])
   const [form, setForm] = useState({
     storeName: '',
     storeTagline: '',
@@ -120,6 +137,7 @@ function StoreSettings() {
       const response = await getStoreSettings()
       const settings = extractSettings(response)
       setForm(buildFormFromSettings(settings))
+      applyBrandingFromSettings(settings)
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load store settings.')
     } finally {
@@ -131,8 +149,26 @@ function StoreSettings() {
     loadSettings()
   }, [])
 
+  const logoPreview = useMemo(
+    () => featuredMediaFromUrl(form.logoUrl),
+    [form.logoUrl],
+  )
+
   const handleFieldChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const openLogoPicker = (tab) => {
+    setLogoPickerSnapshot(logoPreview ? [logoPreview] : [])
+    setLogoPickerTab(tab)
+    setLogoPickerOpen(true)
+  }
+
+  const handleLogoPickerConfirm = (assets) => {
+    const selected = Array.isArray(assets) ? assets[0] : assets
+    const asset = assetFromPickerSelection(selected)
+    if (!asset?.url) return
+    handleFieldChange('logoUrl', asset.url)
   }
 
   const handleSave = async (event) => {
@@ -180,7 +216,13 @@ function StoreSettings() {
 
     setSaving(true)
     try {
-      await updateStoreSettings(payload)
+      const response = await updateStoreSettings(payload)
+      const saved = extractSettingsPayload(response)
+      applyBrandingFromSettings({
+        ...saved,
+        storeName: payload.storeName,
+        logo: payload.logo,
+      })
       setSuccessMessage('Store settings updated successfully.')
       await loadSettings()
     } catch (err) {
@@ -191,310 +233,334 @@ function StoreSettings() {
   }
 
   return (
-    <section>
-      <PageHeader
-        title="Store Settings"
-        subtitle="Manage store identity, contact details, commerce settings, and SEO defaults."
-      />
-
+    <AdminPage
+      headerMode="compact"
+      title="Store Settings"
+      description="Manage store identity, contact details, ecommerce preferences, and operational configuration."
+    >
       {loading ? (
-        <div className="status-card">
-          <p className="status-text">Loading store settings...</p>
-        </div>
+        <ModuleCard>
+          <AdminAlert type="info" title="Loading">
+            Loading store settings...
+          </AdminAlert>
+        </ModuleCard>
       ) : null}
 
       {error ? (
-        <div className="status-card status-card-error">
-          <p className="status-text">{error}</p>
-        </div>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <div className="info-alert">
-          <p className="status-text">{successMessage}</p>
-        </div>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading ? (
-        <form onSubmit={handleSave} className="store-settings-form">
-          <AdminCard title="Store Identity" className="store-settings-card">
-            <div className="product-form-grid">
-              <div className="field-group">
-                <label className="field-label">Store Name</label>
-                <input
+        <form onSubmit={handleSave} className="space-y-4 md:space-y-5">
+          <ModuleCard title="Store Identity & Admin Branding">
+            <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+              Store name and logo update the admin sidebar and login screen. Admin panel
+              subtitle uses the default until the API supports a dedicated field.
+            </p>
+            <ModuleFormGrid columns={2}>
+              <AdminField
+                label="Store Name"
+                description="Shown in the admin sidebar, login page, and storefront."
+              >
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.storeName}
                   onChange={(event) => handleFieldChange('storeName', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Store Tagline</label>
-                <input
+              </AdminField>
+
+              <AdminField
+                label="Store Tagline"
+                description="Storefront copy only; not persisted by the API yet (planned)."
+              >
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.storeTagline}
                   onChange={(event) => handleFieldChange('storeTagline', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Logo URL</label>
-                <input
-                  type="text"
-                  className="field-input"
-                  value={form.logoUrl}
-                  onChange={(event) => handleFieldChange('logoUrl', event.target.value)}
+              </AdminField>
+
+              <AdminField
+                label="Admin Logo"
+                description="Used in the sidebar and login. Choose from the media library or paste a URL."
+                className="md:col-span-2"
+              >
+                <div className="space-y-4">
+                  <SelectedImagePreview
+                    asset={logoPreview}
+                    onRemove={() => handleFieldChange('logoUrl', '')}
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <Button type="button" variant="default" onClick={() => openLogoPicker('library')}>
+                      Choose from Media Library
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => openLogoPicker('upload')}>
+                      Upload New
+                    </Button>
+                  </div>
+                  <Input
+                    type="text"
+                    value={form.logoUrl}
+                    placeholder="/uploads/media/your-logo.png"
+                    onChange={(event) => handleFieldChange('logoUrl', event.target.value)}
+                  />
+                </div>
+                <MediaPickerModal
+                  open={logoPickerOpen}
+                  onOpenChange={setLogoPickerOpen}
+                  mode="single"
+                  mediaType="image"
+                  maxSelection={1}
+                  initialTab={logoPickerTab}
+                  selectedAssets={logoPickerSnapshot}
+                  onConfirm={handleLogoPickerConfirm}
+                  uploadAccept="image/*"
+                  defaultFolder="general"
+                  title="Store logo"
+                  description="Select one image for admin and store branding."
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Favicon URL</label>
-                <input
+              </AdminField>
+
+              <AdminField
+                label="Favicon URL"
+                description="Browser tab icon; not used in admin branding yet."
+              >
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.faviconUrl}
                   onChange={(event) => handleFieldChange('faviconUrl', event.target.value)}
                 />
-              </div>
-            </div>
-          </AdminCard>
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-          <AdminCard title="Contact Information" className="store-settings-card">
-            <div className="product-form-grid">
-              <div className="field-group">
-                <label className="field-label">Email</label>
-                <input
+          <ModuleCard title="Contact Information">
+            <ModuleFormGrid columns={2}>
+              <AdminField label="Email">
+                <Input
                   type="email"
-                  className="field-input"
                   value={form.email}
                   onChange={(event) => handleFieldChange('email', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Phone</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Phone">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.phone}
                   onChange={(event) => handleFieldChange('phone', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Address Line 1</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Address Line 1">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.addressLine1}
                   onChange={(event) => handleFieldChange('addressLine1', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Address Line 2</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Address Line 2">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.addressLine2}
                   onChange={(event) => handleFieldChange('addressLine2', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">City</label>
-                <input
+              </AdminField>
+
+              <AdminField label="City">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.city}
                   onChange={(event) => handleFieldChange('city', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">State</label>
-                <input
+              </AdminField>
+
+              <AdminField label="State">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.state}
                   onChange={(event) => handleFieldChange('state', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Country</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Country">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.country}
                   onChange={(event) => handleFieldChange('country', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Postal Code</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Postal Code">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.postalCode}
                   onChange={(event) => handleFieldChange('postalCode', event.target.value)}
                 />
-              </div>
-            </div>
-          </AdminCard>
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-          <AdminCard title="Commerce Settings" className="store-settings-card">
-            <div className="product-form-grid">
-              <div className="field-group">
-                <label className="field-label">Currency</label>
-                <input
+          <ModuleCard title="Commerce Settings">
+            <ModuleFormGrid columns={2}>
+              <AdminField label="Currency">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.currency}
                   onChange={(event) => handleFieldChange('currency', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Currency Symbol</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Currency Symbol">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.currencySymbol}
                   onChange={(event) => handleFieldChange('currencySymbol', event.target.value)}
                 />
-              </div>
-              <div className="field-group field-group-full">
-                <label className="setup-checkbox">
-                  <input
-                    type="checkbox"
+              </AdminField>
+
+              <AdminField label="Tax Enabled" className="md:col-span-2">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <Checkbox
                     checked={form.taxEnabled}
-                    onChange={(event) => handleFieldChange('taxEnabled', event.target.checked)}
+                    onCheckedChange={(checked) =>
+                      handleFieldChange('taxEnabled', checked === true)
+                    }
                   />
                   Tax Enabled
                 </label>
-              </div>
-              <div className="field-group">
-                <label className="field-label">Default Tax Rate</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Default Tax Rate">
+                <Input
                   type="number"
                   min="0"
                   step="0.01"
-                  className="field-input"
                   value={form.defaultTaxRate}
                   onChange={(event) => handleFieldChange('defaultTaxRate', event.target.value)}
                 />
-              </div>
-              <div className="field-group field-group-full">
-                <label className="setup-checkbox">
-                  <input
-                    type="checkbox"
+              </AdminField>
+
+              <AdminField label="Shipping Enabled" className="md:col-span-2">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <Checkbox
                     checked={form.shippingEnabled}
-                    onChange={(event) =>
-                      handleFieldChange('shippingEnabled', event.target.checked)
+                    onCheckedChange={(checked) =>
+                      handleFieldChange('shippingEnabled', checked === true)
                     }
                   />
                   Shipping Enabled
                 </label>
-              </div>
-              <div className="field-group">
-                <label className="field-label">Free Shipping Threshold</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Free Shipping Threshold">
+                <Input
                   type="number"
                   min="0"
                   step="0.01"
-                  className="field-input"
                   value={form.freeShippingThreshold}
                   onChange={(event) =>
                     handleFieldChange('freeShippingThreshold', event.target.value)
                   }
                 />
-              </div>
-            </div>
-          </AdminCard>
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-          <AdminCard title="SEO Defaults" className="store-settings-card">
-            <div className="product-form-grid">
-              <div className="field-group field-group-full">
-                <label className="field-label">SEO Title</label>
-                <input
+          <ModuleCard title="SEO Defaults">
+            <ModuleFormGrid columns={2}>
+              <AdminField label="SEO Title" className="md:col-span-2">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.seoTitle}
                   onChange={(event) => handleFieldChange('seoTitle', event.target.value)}
                 />
-              </div>
-              <div className="field-group field-group-full">
-                <label className="field-label">SEO Description</label>
-                <textarea
-                  className="field-input field-textarea"
+              </AdminField>
+
+              <AdminField label="SEO Description" className="md:col-span-2">
+                <Textarea
                   rows={3}
                   value={form.seoDescription}
                   onChange={(event) => handleFieldChange('seoDescription', event.target.value)}
                 />
-              </div>
-              <div className="field-group field-group-full">
-                <label className="field-label">SEO Keywords</label>
-                <input
+              </AdminField>
+
+              <AdminField
+                label="SEO Keywords"
+                description="Comma separated"
+                className="md:col-span-2"
+              >
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.seoKeywords}
                   onChange={(event) => handleFieldChange('seoKeywords', event.target.value)}
                   placeholder="keyword1, keyword2"
                 />
-              </div>
-            </div>
-          </AdminCard>
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-          <AdminCard title="Social Links" className="store-settings-card">
-            <div className="product-form-grid">
-              <div className="field-group">
-                <label className="field-label">Facebook</label>
-                <input
+          <ModuleCard title="Social Links">
+            <ModuleFormGrid columns={2}>
+              <AdminField label="Facebook">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.facebook}
                   onChange={(event) => handleFieldChange('facebook', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Instagram</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Instagram">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.instagram}
                   onChange={(event) => handleFieldChange('instagram', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">LinkedIn</label>
-                <input
+              </AdminField>
+
+              <AdminField label="LinkedIn">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.linkedin}
                   onChange={(event) => handleFieldChange('linkedin', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">Twitter</label>
-                <input
+              </AdminField>
+
+              <AdminField label="Twitter">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.twitter}
                   onChange={(event) => handleFieldChange('twitter', event.target.value)}
                 />
-              </div>
-              <div className="field-group">
-                <label className="field-label">YouTube</label>
-                <input
+              </AdminField>
+
+              <AdminField label="YouTube">
+                <Input
                   type="text"
-                  className="field-input"
                   value={form.youtube}
                   onChange={(event) => handleFieldChange('youtube', event.target.value)}
                 />
-              </div>
-            </div>
-          </AdminCard>
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-          <div className="form-actions">
-            <ActionButton type="submit" variant="primary" disabled={saving}>
+          <ModuleActions className="justify-end">
+            <Button type="submit" size="sm" disabled={saving}>
               {saving ? 'Saving...' : 'Save Settings'}
-            </ActionButton>
-          </div>
+            </Button>
+          </ModuleActions>
         </form>
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

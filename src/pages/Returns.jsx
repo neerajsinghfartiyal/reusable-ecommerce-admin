@@ -1,16 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getReturnRequests } from '../api/returnApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import Pagination from '../components/ui/Pagination'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
+import PageLoading from '@/components/admin-ui/PageLoading'
+import {
+  extractList,
+  extractPagination,
+  formatDateTime,
+  getCustomerDisplayName,
+  getNumberValue,
+} from '@/lib/sales'
 
 const typeFilters = ['all', 'return', 'exchange']
 const statusFilters = [
@@ -24,43 +35,21 @@ const statusFilters = [
   'closed',
 ]
 
-const getNumberValue = (...values) => {
-  for (const value of values) {
-    const parsed = Number(value)
-    if (!Number.isNaN(parsed)) return parsed
-  }
-  return 0
-}
-
-const extractList = (response) => {
-  const checks = [
-    response?.data?.returnRequests,
-    response?.returnRequests,
-    response?.data?.data?.returnRequests,
-    response?.data?.items,
-    response?.items,
-    response?.data,
-    response,
-  ]
-
-  for (const value of checks) {
-    if (Array.isArray(value)) return value
+const getRequestTypeFilterLabel = (type) => {
+  if (type === 'all') {
+    return 'All request types'
   }
 
-  return []
+  return type.charAt(0).toUpperCase() + type.slice(1)
 }
 
-const extractPagination = (response) =>
-  response?.data?.data?.pagination ||
-  response?.data?.pagination ||
-  response?.pagination ||
-  {}
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
 
-const getCustomerName = (customer) =>
-  `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
-  customer?.name ||
-  customer?.email ||
-  'Customer'
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
 
 function Returns() {
   const navigate = useNavigate()
@@ -91,7 +80,7 @@ function Returns() {
       if (statusFilter !== 'all') params.status = statusFilter
 
       const response = await getReturnRequests(params)
-      const list = extractList(response)
+      const list = extractList(response, ['returnRequests'])
       const paginationData = extractPagination(response)
 
       setReturnRequests(list)
@@ -150,79 +139,94 @@ function Returns() {
 
   const columns = [
     { key: 'requestType', label: 'Request Type' },
-    { key: 'orderNumber', label: 'Order Number' },
+    { key: 'orderNumber', label: 'Order' },
     { key: 'customer', label: 'Customer' },
     { key: 'reason', label: 'Reason' },
     { key: 'status', label: 'Status' },
-    { key: 'createdAt', label: 'Created At' },
+    { key: 'createdAt', label: 'Created' },
     { key: 'actions', label: 'Actions' },
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Returns / Exchanges"
-        description="Manage customer return and exchange requests."
-      />
+    <AdminPage
+      headerMode="hidden"
+      title="Returns / Exchanges"
+      description="Manage customer return and exchange requests."
+    >
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search by reason, notes, status, type..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search returns and exchanges..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-          value={typeFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setTypeFilter(event.target.value)
-          }}
-        >
-          {typeFilters.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
+        <AdminFilterField label="Request Type">
+          <AdminSelect
+            value={typeFilter}
+            aria-label="Filter by request type"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setTypeFilter(event.target.value)
+            }}
+          >
+            {typeFilters.map((type) => (
+              <option key={type} value={type}>
+                {getRequestTypeFilterLabel(type)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by request status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Loading return requests...</p>
-        </ModuleCard>
-      ) : null}
+      {loading ? <PageLoading message="Loading return requests..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50 dark:border-red-900/70 dark:bg-red-950/30">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
         <>
+          <div className="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-600 dark:border-slate-800/90 dark:bg-slate-900/40 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Showing {returnRequests.length} of {pagination.totalItems} requests
+            </p>
+            <p>
+              Page <span className="font-semibold text-slate-900 dark:text-slate-100">{pagination.currentPage}</span> of{' '}
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{pagination.totalPages}</span>
+            </p>
+          </div>
+
           {returnRequests.length === 0 ? (
             <ModuleEmptyState
               title="No return requests found"
@@ -232,32 +236,47 @@ function Returns() {
             <ModuleTable
               columns={columns}
               data={returnRequests}
+              compact
               emptyMessage="No return/exchange requests found."
               renderRow={(request, index) => {
                 const id = request?._id || request?.id || `return-${index}`
                 const type = (request?.type || 'return').toLowerCase()
                 const status = (request?.status || 'requested').toLowerCase()
                 const orderNumber = request?.order?.orderNumber || request?.order?._id || '-'
-                const customerName = getCustomerName(request?.customer || {})
+                const customerId = request?.customer?._id || request?.customer?.id || ''
+                const orderId = request?.order?._id || request?.order?.id || ''
+                const customerName = getCustomerDisplayName(request?.customer || {})
                 const reason = request?.reason || '-'
-                const createdAt = request?.createdAt
-                  ? new Date(request.createdAt).toLocaleString()
-                  : '-'
+                const createdAt = formatDateTime(request?.createdAt)
 
                 return (
-                  <tr key={id} className="text-slate-700 dark:text-slate-300">
+                  <tr key={id} className="align-top text-slate-700 dark:text-slate-300">
                     <td>
                       <ModuleStatusBadge status={type} />
                     </td>
-                    <td className="font-medium text-slate-800 dark:text-slate-100">{orderNumber}</td>
-                    <td>{customerName}</td>
-                    <td className="text-slate-600 dark:text-slate-400">{reason}</td>
+                    <td className="min-w-[9rem]">
+                      <div className="space-y-1">
+                        <p className="font-medium text-slate-800 dark:text-slate-100">{orderNumber}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {request?.order?.paymentStatus || 'No payment state'}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="min-w-[12rem]">
+                      <div className="space-y-1">
+                        <p className="font-medium text-slate-800 dark:text-slate-100">{customerName}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {request?.customer?.email || 'No email'}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="max-w-[18rem] text-slate-600 dark:text-slate-400">{reason}</td>
                     <td>
                       <ModuleStatusBadge status={status} />
                     </td>
                     <td className="text-slate-600 dark:text-slate-400">{createdAt}</td>
                     <td>
-                      <ModuleActions>
+                      <ModuleActions wrap="wrap">
                         <Button
                           type="button"
                           size="sm"
@@ -267,6 +286,26 @@ function Returns() {
                         >
                           View
                         </Button>
+                        {orderId ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/orders/${orderId}`)}
+                          >
+                            Order
+                          </Button>
+                        ) : null}
+                        {customerId ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/customers/${customerId}`)}
+                          >
+                            Customer
+                          </Button>
+                        ) : null}
                       </ModuleActions>
                     </td>
                   </tr>
@@ -275,17 +314,17 @@ function Returns() {
             />
           )}
 
-          <div className="[&_.pagination-btn]:dark:border-slate-700 [&_.pagination-btn]:dark:bg-slate-900 [&_.pagination-btn]:dark:text-slate-200 [&_.pagination-btn:disabled]:dark:text-slate-500 [&_.pagination-text]:dark:text-slate-400">
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPrevious={goPrev}
-              onNext={goNext}
-            />
-          </div>
+          <AdminPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPrevious={goPrev}
+            onNext={goNext}
+            isPreviousDisabled={pagination.currentPage <= 1}
+            isNextDisabled={pagination.currentPage >= pagination.totalPages}
+          />
         </>
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

@@ -5,6 +5,13 @@ import {
   getAdminUsers,
   updateAdminUser,
 } from '../api/adminUserApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -12,15 +19,35 @@ import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-import Pagination from '../components/ui/Pagination'
-
+import PageLoading from '@/components/admin-ui/PageLoading'
 const roleFilters = ['all', 'super_admin', 'admin', 'manager', 'staff']
 const statusFilters = ['all', 'active', 'inactive']
 const roleOptions = ['super_admin', 'admin', 'manager', 'staff']
+
+const getRoleFilterLabel = (role) => {
+  if (role === 'all') {
+    return 'All roles'
+  }
+
+  const labels = {
+    super_admin: 'Super Admin',
+    admin: 'Admin',
+    manager: 'Manager',
+    staff: 'Staff',
+  }
+
+  return labels[role] || role
+}
+
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -300,33 +327,31 @@ function AdminUsers() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Admin Users"
-        description="Manage admin accounts, roles, and access status."
-      />
-
+    <AdminPage
+      headerMode="hidden"
+      title="Admin Users"
+      description="Manage admin accounts, roles, and access status."
+    >
       <ModuleCard title="Create Admin User">
         <form onSubmit={handleCreate}>
           <ModuleFormGrid columns={2}>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
+            <AdminField label="Name" required>
               <Input
                 type="text"
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
+            </AdminField>
+
+            <AdminField label="Email" required>
               <Input
                 type="email"
                 value={form.email}
                 onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
+            </AdminField>
+
+            <AdminField label="Password" required>
               <Input
                 type="password"
                 value={form.password}
@@ -334,11 +359,10 @@ function AdminUsers() {
                   setForm((prev) => ({ ...prev, password: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Role</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+            </AdminField>
+
+            <AdminField label="Role">
+              <AdminSelect
                 value={form.role}
                 onChange={(event) => setForm((prev) => ({ ...prev, role: event.target.value }))}
               >
@@ -347,10 +371,11 @@ function AdminUsers() {
                     {role}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              </AdminSelect>
+            </AdminField>
+
+            <AdminField label="Active" className="md:col-span-2">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <Checkbox
                   checked={Boolean(form.isActive)}
                   onCheckedChange={(checked) =>
@@ -359,8 +384,9 @@ function AdminUsers() {
                 />
                 Active
               </label>
-            </div>
+            </AdminField>
           </ModuleFormGrid>
+
           <ModuleActions className="mt-4 justify-end">
             <Button type="submit" size="sm" disabled={submitting}>
               {submitting ? 'Creating...' : 'Create Admin'}
@@ -369,66 +395,71 @@ function AdminUsers() {
         </form>
       </ModuleCard>
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search admin users..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search admin users..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={roleFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setRoleFilter(event.target.value)
-          }}
-        >
-          {roleFilters.map((role) => (
-            <option key={role} value={role}>
-              {role}
-            </option>
-          ))}
-        </select>
+        <AdminFilterField label="Role">
+          <AdminSelect
+            value={roleFilter}
+            aria-label="Filter by role"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setRoleFilter(event.target.value)
+            }}
+          >
+            {roleFilters.map((role) => (
+              <option key={role} value={role}>
+                {getRoleFilterLabel(role)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading admin users...</p>
-        </ModuleCard>
-      ) : null}
+      {loading ? <PageLoading message="Loading admin users..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50">
-          <p className="text-sm text-blue-700">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
@@ -450,8 +481,8 @@ function AdminUsers() {
                 const statusText = adminUser?.isActive ? 'active' : 'inactive'
 
                 return (
-                  <tr key={id}>
-                    <td>
+                  <tr key={id} className="text-slate-700 dark:text-slate-300">
+                    <td className="font-medium text-slate-800 dark:text-slate-100">
                       {isEditing ? (
                         <Input
                           type="text"
@@ -474,13 +505,12 @@ function AdminUsers() {
                           }
                         />
                       ) : (
-                        adminUser?.email || '-'
+                        <span className="text-slate-600 dark:text-slate-400">{adminUser?.email || '-'}</span>
                       )}
                     </td>
                     <td>
                       {isEditing ? (
-                        <select
-                          className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+                        <AdminSelect
                           value={editForm.role}
                           onChange={(event) =>
                             setEditForm((prev) => ({ ...prev, role: event.target.value }))
@@ -491,14 +521,14 @@ function AdminUsers() {
                               {role}
                             </option>
                           ))}
-                        </select>
+                        </AdminSelect>
                       ) : (
                         adminUser?.role || '-'
                       )}
                     </td>
                     <td>
                       {isEditing ? (
-                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                           <Checkbox
                             checked={Boolean(editForm.isActive)}
                             onCheckedChange={(checked) =>
@@ -514,7 +544,9 @@ function AdminUsers() {
                         <ModuleStatusBadge status={statusText} />
                       )}
                     </td>
-                    <td>{formatDate(adminUser?.createdAt)}</td>
+                    <td className="text-slate-600 dark:text-slate-400">
+                      {formatDate(adminUser?.createdAt)}
+                    </td>
                     <td>
                       <ModuleActions>
                         {isEditing ? (
@@ -552,16 +584,18 @@ function AdminUsers() {
               }}
             />
 
-            <Pagination
+            <AdminPagination
               currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
               onPrevious={goPrev}
               onNext={goNext}
+              isPreviousDisabled={pagination.currentPage <= 1}
+              isNextDisabled={pagination.currentPage >= pagination.totalPages}
             />
           </>
         )
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

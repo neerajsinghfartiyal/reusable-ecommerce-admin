@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import Login from '../pages/Login'
 import Dashboard from '../pages/Dashboard'
 import Products from '../pages/Products'
+import ProductImports from '../pages/ProductImports'
 import ProductForm from '../pages/ProductForm'
 import Categories from '../pages/Categories'
 import Brands from '../pages/Brands'
@@ -67,6 +68,7 @@ function AppRoutes() {
       >
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/products" element={<Products />} />
+        <Route path="/product-imports" element={<ProductImports />} />
         <Route path="/products/create" element={<ProductForm />} />
         <Route path="/products/edit/:id" element={<ProductForm />} />
         <Route path="/categories" element={<Categories />} />

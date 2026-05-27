@@ -3,6 +3,7 @@ import {
   BookOpen,
   Boxes,
   CreditCard,
+  FileUp,
   FileText,
   Home,
   Image,
@@ -30,6 +31,7 @@ export const sidebarSections = [
     icon: Package,
     items: [
       { label: "Products", to: "/products", icon: Boxes },
+      { label: "Product Imports", to: "/product-imports", icon: FileUp },
       { label: "Categories", to: "/categories", icon: BookOpen },
       { label: "Brands", to: "/brands", icon: Tag },
       { label: "Unit Types", to: "/unit-types", icon: Package },
@@ -43,6 +45,7 @@ export const sidebarSections = [
     items: [
       { label: "Orders", to: "/orders", icon: ShoppingCart },
       { label: "Returns / Exchanges", to: "/returns", icon: Repeat },
+      { label: "Customers", to: "/customers", icon: Users },
       { label: "Coupons", to: "/coupons", icon: Tag }
     ]
   },

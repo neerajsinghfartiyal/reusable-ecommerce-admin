@@ -1,30 +1,31 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getCustomerById, updateCustomer } from '../api/customerApi'
-import ActionButton from '../components/ui/ActionButton'
-import AdminCard from '../components/ui/AdminCard'
-import PageHeader from '../components/ui/PageHeader'
-import StatusBadge from '../components/ui/StatusBadge'
-
-const extractCustomer = (response) =>
-  response?.data?.data?.customer ||
-  response?.data?.data?.item ||
-  response?.data?.data ||
-  response?.data?.customer ||
-  response?.data?.item ||
-  response?.data ||
-  {}
-
-const getCustomerName = (customer) =>
-  `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
-  customer?.name ||
-  'Customer'
-
-const getStatus = (customer) => {
-  if (typeof customer?.status === 'string') return customer.status.toLowerCase()
-  if (typeof customer?.isActive === 'boolean') return customer.isActive ? 'active' : 'inactive'
-  return 'active'
-}
+import { getOrders } from '../api/orderApi'
+import { getReturnRequests } from '../api/returnApi'
+import { getActivityLogs } from '../api/activityLogApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
+import ModuleActions from '@/components/admin-ui/ModuleActions'
+import ModuleCard from '@/components/admin-ui/ModuleCard'
+import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
+import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
+import SalesActivityTimeline from '@/components/sales/SalesActivityTimeline'
+import { adminLinkButtonClass } from '@/components/admin-ui/adminStyles'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  extractEntity,
+  extractList,
+  formatCurrency,
+  formatDateTime,
+  getCustomerDisplayName,
+  getCustomerStatus,
+  getOrderDisplayNumber,
+  CUSTOMER_STATUS_OPTIONS,
+} from '@/lib/sales'
 
 function CustomerDetails() {
   const { id } = useParams()
@@ -35,6 +36,12 @@ function CustomerDetails() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [relatedOrders, setRelatedOrders] = useState([])
+  const [relatedReturns, setRelatedReturns] = useState([])
+  const [relationsLoading, setRelationsLoading] = useState(true)
+  const [activityLogs, setActivityLogs] = useState([])
+  const [activityLoading, setActivityLoading] = useState(true)
+  const [activityError, setActivityError] = useState('')
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -50,14 +57,14 @@ function CustomerDetails() {
 
     try {
       const response = await getCustomerById(id)
-      const details = extractCustomer(response)
+      const details = extractEntity(response, ['customer', 'item'])
       setCustomer(details)
       setForm({
         firstName: details?.firstName || '',
         lastName: details?.lastName || '',
         email: details?.email || '',
         phone: details?.phone || '',
-        status: getStatus(details),
+        status: getCustomerStatus(details),
       })
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load customer details.')
@@ -66,8 +73,41 @@ function CustomerDetails() {
     }
   }
 
+  const loadRelationships = async () => {
+    if (!id) return
+
+    setRelationsLoading(true)
+    setActivityLoading(true)
+    setActivityError('')
+
+    try {
+      const [ordersResponse, returnsResponse, activityResponse] = await Promise.all([
+        getOrders({ customer: id, limit: 5, sortBy: 'createdAt', sortOrder: 'desc' }),
+        getReturnRequests({ customer: id, limit: 5, sortBy: 'createdAt', sortOrder: 'desc' }),
+        getActivityLogs({
+          module: 'CUSTOMER',
+          entityType: 'Customer',
+          entityId: id,
+          limit: 6,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+        }),
+      ])
+
+      setRelatedOrders(extractList(ordersResponse, ['orders']))
+      setRelatedReturns(extractList(returnsResponse, ['returnRequests']))
+      setActivityLogs(extractList(activityResponse, ['logs']))
+    } catch (err) {
+      setActivityError(err?.response?.data?.message || 'Failed to load related customer activity.')
+    } finally {
+      setRelationsLoading(false)
+      setActivityLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadCustomer()
+    loadRelationships()
   }, [id])
 
   const handleSave = async (event) => {
@@ -93,6 +133,7 @@ function CustomerDetails() {
       })
       setSuccessMessage('Customer updated successfully.')
       await loadCustomer()
+      await loadRelationships()
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to update customer.')
     } finally {
@@ -100,174 +141,297 @@ function CustomerDetails() {
     }
   }
 
+  const backAction = (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className={adminLinkButtonClass}
+      onClick={() => navigate('/customers')}
+    >
+      Back to Customers
+    </Button>
+  )
+
   if (loading) {
     return (
-      <section>
-        <PageHeader
-          title="Customer Details"
-          subtitle="View and update customer profile information."
-          actions={
-            <ActionButton type="button" variant="ghost" onClick={() => navigate('/customers')}>
-              Back to Customers
-            </ActionButton>
-          }
-        />
-        <div className="status-card">
-          <p className="status-text">Loading customer details...</p>
-        </div>
-      </section>
+      <AdminPage
+        headerMode="compact"
+        title="Customer Details"
+        description="View and update customer profile information."
+        actions={backAction}
+      >
+        <ModuleCard>
+          <AdminAlert type="info" title="Loading">
+            Loading customer details...
+          </AdminAlert>
+        </ModuleCard>
+      </AdminPage>
     )
   }
 
-  const customerName = getCustomerName(customer || {})
-  const status = getStatus(customer || {})
-  const createdAt = customer?.createdAt
-    ? new Date(customer.createdAt).toLocaleString()
-    : '-'
-  const updatedAt = customer?.updatedAt
-    ? new Date(customer.updatedAt).toLocaleString()
-    : '-'
+  const customerName = getCustomerDisplayName(customer || {})
+  const status = getCustomerStatus(customer || {})
+  const createdAt = formatDateTime(customer?.createdAt)
+  const updatedAt = formatDateTime(customer?.updatedAt)
   const address = customer?.address || {}
 
   return (
-    <section>
-      <PageHeader
-        title="Customer Details"
-        subtitle="View and update customer profile information."
-        actions={
-          <ActionButton type="button" variant="ghost" onClick={() => navigate('/customers')}>
-            Back to Customers
-          </ActionButton>
-        }
-      />
+    <AdminPage
+      headerMode="compact"
+      title="Customer Details"
+      description="View and update customer profile information."
+      actions={backAction}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <ModuleStatusBadge status={status} />
+        {relatedOrders.length > 0 ? (
+          <span className="text-sm text-slate-500 dark:text-slate-400">
+            {relatedOrders.length} recent orders
+          </span>
+        ) : null}
+        {relatedReturns.length > 0 ? (
+          <span className="text-sm text-slate-500 dark:text-slate-400">
+            {relatedReturns.length} recent returns
+          </span>
+        ) : null}
+      </div>
 
       {error ? (
-        <div className="danger-alert">
-          <p className="status-text">{error}</p>
-        </div>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <div className="info-alert">
-          <p className="status-text">{successMessage}</p>
-        </div>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
-      <div className="customer-details-grid">
-        <AdminCard title="Customer Summary" className="customer-detail-card">
-          <p>
-            <strong>Name:</strong> {customerName}
-          </p>
-          <p>
-            <strong>Email:</strong> {customer?.email || '-'}
-          </p>
-          <p>
-            <strong>Phone:</strong> {customer?.phone || '-'}
-          </p>
-          <p>
-            <strong>Status:</strong> <StatusBadge status={status} />
-          </p>
-          <p>
-            <strong>Created At:</strong> {createdAt}
-          </p>
-          <p>
-            <strong>Updated At:</strong> {updatedAt}
-          </p>
-        </AdminCard>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ModuleCard title="Customer Summary">
+          <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Name:</strong> {customerName}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Email:</strong>{' '}
+              {customer?.email || '-'}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Phone:</strong>{' '}
+              {customer?.phone || '-'}
+            </p>
+            <p className="flex flex-wrap items-center gap-2">
+              <strong className="text-slate-900 dark:text-slate-100">Status:</strong>
+              <ModuleStatusBadge status={status} />
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Created At:</strong> {createdAt}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Updated At:</strong> {updatedAt}
+            </p>
+          </div>
+        </ModuleCard>
 
-        <AdminCard title="Address" className="customer-detail-card">
-          <p>
-            <strong>Street:</strong> {address?.street || '-'}
-          </p>
-          <p>
-            <strong>City:</strong> {address?.city || '-'}
-          </p>
-          <p>
-            <strong>State:</strong> {address?.state || '-'}
-          </p>
-          <p>
-            <strong>Postal Code:</strong> {address?.postalCode || '-'}
-          </p>
-          <p>
-            <strong>Country:</strong> {address?.country || '-'}
-          </p>
-        </AdminCard>
+        <ModuleCard title="Address">
+          <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Street:</strong>{' '}
+              {address?.street || '-'}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">City:</strong>{' '}
+              {address?.city || '-'}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">State:</strong>{' '}
+              {address?.state || '-'}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Postal Code:</strong>{' '}
+              {address?.postalCode || '-'}
+            </p>
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">Country:</strong>{' '}
+              {address?.country || '-'}
+            </p>
+          </div>
+        </ModuleCard>
+
+        <ModuleCard title="Edit Customer">
+          <form onSubmit={handleSave}>
+            <ModuleFormGrid columns={1}>
+              <AdminField label="First Name" required>
+                <Input
+                  type="text"
+                  value={form.firstName}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, firstName: event.target.value }))
+                  }
+                />
+              </AdminField>
+
+              <AdminField label="Last Name">
+                <Input
+                  type="text"
+                  value={form.lastName}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, lastName: event.target.value }))
+                  }
+                />
+              </AdminField>
+
+              <AdminField label="Email" required>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, email: event.target.value }))
+                  }
+                />
+              </AdminField>
+
+              <AdminField label="Phone">
+                <Input
+                  type="text"
+                  value={form.phone}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, phone: event.target.value }))
+                  }
+                />
+              </AdminField>
+
+              <AdminField label="Status">
+                <AdminSelect
+                  value={form.status}
+                  aria-label="Customer status"
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, status: event.target.value }))
+                  }
+                >
+                  {CUSTOMER_STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </AdminSelect>
+              </AdminField>
+            </ModuleFormGrid>
+
+            <ModuleActions className="mt-4 justify-end">
+              <Button type="submit" size="sm" disabled={saving}>
+                {saving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </ModuleActions>
+          </form>
+        </ModuleCard>
       </div>
 
-      <AdminCard title="Edit Customer" className="customer-edit-card">
-        <form onSubmit={handleSave}>
-          <div className="product-form-grid">
-            <div className="field-group">
-              <label className="field-label">First Name</label>
-              <input
-                type="text"
-                className="field-input"
-                value={form.firstName}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, firstName: event.target.value }))
-                }
-              />
-            </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="space-y-4">
+          <ModuleCard title="Recent Orders" description="Newest orders linked to this customer.">
+            {relationsLoading ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Loading related orders…</p>
+            ) : relatedOrders.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No orders are linked to this customer yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {relatedOrders.map((order) => {
+                  const orderId = order?._id || order?.id
 
-            <div className="field-group">
-              <label className="field-label">Last Name</label>
-              <input
-                type="text"
-                className="field-input"
-                value={form.lastName}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, lastName: event.target.value }))
-                }
-              />
-            </div>
+                  return (
+                    <div
+                      key={orderId}
+                      className="rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/50"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ModuleStatusBadge status={order?.paymentStatus || 'pending'} />
+                            <ModuleStatusBadge status={order?.orderStatus || 'pending'} />
+                          </div>
+                          <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {getOrderDisplayNumber(order)}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {formatCurrency(order?.totalAmount || order?.total || 0)} •{' '}
+                            {formatDateTime(order?.createdAt)}
+                          </p>
+                        </div>
+                        {orderId ? (
+                          <Link to={`/orders/${orderId}`} className={adminLinkButtonClass}>
+                            View order
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </ModuleCard>
 
-            <div className="field-group">
-              <label className="field-label">Email</label>
-              <input
-                type="email"
-                className="field-input"
-                value={form.email}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, email: event.target.value }))
-                }
-              />
-            </div>
+          <ModuleCard
+            title="Recent Returns"
+            description="Return and exchange requests linked to this customer."
+          >
+            {relationsLoading ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Loading related returns…</p>
+            ) : relatedReturns.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No returns or exchanges are linked to this customer yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {relatedReturns.map((request) => {
+                  const requestId = request?._id || request?.id
 
-            <div className="field-group">
-              <label className="field-label">Phone</label>
-              <input
-                type="text"
-                className="field-input"
-                value={form.phone}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, phone: event.target.value }))
-                }
-              />
-            </div>
+                  return (
+                    <div
+                      key={requestId}
+                      className="rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/50"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ModuleStatusBadge status={request?.type || 'return'} />
+                            <ModuleStatusBadge status={request?.status || 'requested'} />
+                          </div>
+                          <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {request?.reason || 'No reason provided'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {request?.order?.orderNumber || 'No order number'} •{' '}
+                            {formatDateTime(request?.createdAt)}
+                          </p>
+                        </div>
+                        {requestId ? (
+                          <Link to={`/returns/${requestId}`} className={adminLinkButtonClass}>
+                            View request
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </ModuleCard>
+        </div>
 
-            <div className="field-group">
-              <label className="field-label">Status</label>
-              <select
-                className="field-input"
-                value={form.status}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, status: event.target.value }))
-                }
-              >
-                <option value="active">active</option>
-                <option value="inactive">inactive</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="setup-actions">
-            <ActionButton type="submit" variant="primary" disabled={saving}>
-              {saving ? 'Saving...' : 'Save Changes'}
-            </ActionButton>
-          </div>
-        </form>
-      </AdminCard>
-    </section>
+        <SalesActivityTimeline
+          logs={activityLogs}
+          loading={activityLoading}
+          error={activityError}
+          emptyMessage="No customer activity has been recorded yet."
+        />
+      </div>
+    </AdminPage>
   )
 }
 

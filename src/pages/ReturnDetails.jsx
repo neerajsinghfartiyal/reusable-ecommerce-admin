@@ -1,53 +1,35 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   closeReturnRequest,
   getReturnRequestById,
   updateReturnRequestStatus,
 } from '../api/returnApi'
+import { getActivityLogs } from '../api/activityLogApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
+import ConfirmActionDialog from '@/components/admin-ui/ConfirmActionDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-
-const returnStatuses = [
-  'requested',
-  'approved',
-  'rejected',
-  'received',
-  'refunded',
-  'exchanged',
-  'closed',
-]
-
-const extractReturnRequest = (response) =>
-  response?.data?.data?.returnRequest ||
-  response?.data?.data?.item ||
-  response?.data?.data ||
-  response?.data?.returnRequest ||
-  response?.data?.item ||
-  response?.data ||
-  {}
-
-const formatCurrency = (value) => {
-  const amount = Number(value)
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  }).format(Number.isNaN(amount) ? 0 : amount)
-}
-
-const getCustomerName = (customer) =>
-  `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
-  customer?.name ||
-  customer?.email ||
-  'Customer'
+import SalesActivityTimeline from '@/components/sales/SalesActivityTimeline'
+import { adminLinkButtonClass } from '@/components/admin-ui/adminStyles'
+import {
+  extractEntity,
+  extractList,
+  formatCurrency,
+  formatDateTime,
+  getCustomerDisplayName,
+  getOrderFulfillment,
+  RETURN_STATUS_OPTIONS,
+} from '@/lib/sales'
 
 function ReturnDetails() {
   const { id } = useParams()
@@ -62,6 +44,10 @@ function ReturnDetails() {
   const [selectedStatus, setSelectedStatus] = useState('requested')
   const [refundAmount, setRefundAmount] = useState('0')
   const [updateNotes, setUpdateNotes] = useState('')
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const [activityLogs, setActivityLogs] = useState([])
+  const [activityLoading, setActivityLoading] = useState(true)
+  const [activityError, setActivityError] = useState('')
 
   const loadReturnRequest = async () => {
     if (!id) return
@@ -71,7 +57,7 @@ function ReturnDetails() {
 
     try {
       const response = await getReturnRequestById(id)
-      const details = extractReturnRequest(response)
+      const details = extractEntity(response, ['returnRequest', 'item'])
 
       setRequest(details)
       setSelectedStatus((details?.status || 'requested').toLowerCase())
@@ -84,8 +70,32 @@ function ReturnDetails() {
     }
   }
 
+  const loadActivity = async () => {
+    if (!id) return
+
+    setActivityLoading(true)
+    setActivityError('')
+
+    try {
+      const response = await getActivityLogs({
+        module: 'RETURN',
+        entityType: 'ReturnRequest',
+        entityId: id,
+        limit: 6,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      })
+      setActivityLogs(extractList(response, ['logs']))
+    } catch (err) {
+      setActivityError(err?.response?.data?.message || 'Failed to load activity history.')
+    } finally {
+      setActivityLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadReturnRequest()
+    loadActivity()
   }, [id])
 
   const handleStatusUpdate = async () => {
@@ -102,7 +112,8 @@ function ReturnDetails() {
         notes: updateNotes,
       })
       setSuccessMessage('Return request status updated successfully.')
-      navigate('/returns')
+      await loadReturnRequest()
+      await loadActivity()
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to update return request status.')
     } finally {
@@ -119,7 +130,10 @@ function ReturnDetails() {
 
     try {
       await closeReturnRequest(id)
-      navigate('/returns')
+      setCloseDialogOpen(false)
+      setSuccessMessage('Return request closed successfully.')
+      await loadReturnRequest()
+      await loadActivity()
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to close return request.')
     } finally {
@@ -127,40 +141,53 @@ function ReturnDetails() {
     }
   }
 
+  const backAction = (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className={adminLinkButtonClass}
+      onClick={() => navigate('/returns')}
+    >
+      Back to Returns
+    </Button>
+  )
+
   if (loading) {
     return (
-      <section>
-        <ModuleHeader
-          title="Return Request Details"
-          description="Review request details, items, and status updates."
-          actions={
-            <Button type="button" size="sm" variant="ghost" onClick={() => navigate('/returns')}>
-              Back to Returns
-            </Button>
-          }
-        />
+      <AdminPage
+        headerMode="compact"
+        title="Return Request Details"
+        description="Review request details, related records, and status updates."
+        actions={backAction}
+      >
         <ModuleCard>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Loading return request details...</p>
+          <AdminAlert type="info" title="Loading">
+            Loading return request details...
+          </AdminAlert>
         </ModuleCard>
-      </section>
+      </AdminPage>
     )
   }
 
   const type = (request?.type || 'return').toLowerCase()
   const status = (request?.status || 'requested').toLowerCase()
   const orderNumber = request?.order?.orderNumber || request?.order?._id || '-'
-  const customerName = getCustomerName(request?.customer || {})
+  const orderId = request?.order?._id || request?.order?.id || ''
+  const customerId = request?.customer?._id || request?.customer?.id || ''
+  const customerName = getCustomerDisplayName(request?.customer || {})
   const customerEmail = request?.customer?.email || '-'
   const customerPhone = request?.customer?.phone || '-'
   const reason = request?.reason || '-'
   const notes = request?.notes || '-'
-  const createdAt = request?.createdAt ? new Date(request.createdAt).toLocaleString() : '-'
-  const reviewedAt = request?.reviewedAt
-    ? new Date(request.reviewedAt).toLocaleString()
-    : 'Not reviewed yet'
+  const createdAt = formatDateTime(request?.createdAt)
+  const reviewedAt = request?.reviewedAt ? formatDateTime(request?.reviewedAt) : 'Not reviewed yet'
   const reviewedBy =
     request?.reviewedBy?.name || request?.reviewedBy?.email || 'Not reviewed yet'
   const items = Array.isArray(request?.items) ? request.items : []
+  const maxRefundAmount = Number(request?.order?.totalAmount || 0)
+  const isClosed = status === 'closed'
+  const linkedOrderFulfillment = getOrderFulfillment(request?.order || {})
   const itemColumns = [
     { key: 'product', label: 'Product' },
     { key: 'sku', label: 'SKU' },
@@ -171,153 +198,208 @@ function ReturnDetails() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Return Request Details"
-        description="Review request details, items, and status updates."
-        actions={
-          <Button type="button" size="sm" variant="ghost" onClick={() => navigate('/returns')}>
-            Back to Returns
-          </Button>
-        }
-      />
+    <AdminPage
+      headerMode="compact"
+      title="Return Request Details"
+      description="Review request details, related order/customer records, and status updates."
+      actions={backAction}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <ModuleStatusBadge status={type} />
+        <ModuleStatusBadge status={status} />
+        {orderId ? (
+          <Link to={`/orders/${orderId}`} className={adminLinkButtonClass}>
+            View Order
+          </Link>
+        ) : null}
+        {customerId ? (
+          <Link to={`/customers/${customerId}`} className={adminLinkButtonClass}>
+            View Customer
+          </Link>
+        ) : null}
+      </div>
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50 dark:border-red-900/70 dark:bg-red-950/30">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50 dark:border-blue-900/70 dark:bg-blue-950/30">
-          <p className="text-sm text-blue-700 dark:text-blue-300">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {selectedStatus === 'refunded' && Number(refundAmount || 0) > maxRefundAmount ? (
+        <AdminAlert type="warning" title="Refund exceeds order total">
+          Refund amounts cannot exceed the linked order total of {formatCurrency(maxRefundAmount)}.
+        </AdminAlert>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-3">
         <ModuleCard title="Request Summary">
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Type:</strong> <ModuleStatusBadge status={type} />
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Status:</strong> <ModuleStatusBadge status={status} />
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Reason:</strong> {reason}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Notes:</strong> {notes}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Created At:</strong> {createdAt}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Reviewed By:</strong> {reviewedBy}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Reviewed At:</strong> {reviewedAt}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Refund Amount:</strong> {formatCurrency(request?.refundAmount || 0)}
-          </p>
+          <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <p>
+              <strong>Type:</strong> <ModuleStatusBadge status={type} />
+            </p>
+            <p>
+              <strong>Status:</strong> <ModuleStatusBadge status={status} />
+            </p>
+            <p>
+              <strong>Reason:</strong> {reason}
+            </p>
+            <p>
+              <strong>Notes:</strong> {notes}
+            </p>
+            <p>
+              <strong>Created At:</strong> {createdAt}
+            </p>
+            <p>
+              <strong>Reviewed By:</strong> {reviewedBy}
+            </p>
+            <p>
+              <strong>Reviewed At:</strong> {reviewedAt}
+            </p>
+            <p>
+              <strong>Refund Amount:</strong> {formatCurrency(request?.refundAmount || 0)}
+            </p>
+          </div>
         </ModuleCard>
 
-        <ModuleCard title="Order Details">
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Order Number:</strong> {orderNumber}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Order Status:</strong> {request?.order?.orderStatus || '-'}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Payment Status:</strong> {request?.order?.paymentStatus || '-'}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Total Amount:</strong> {formatCurrency(request?.order?.totalAmount || 0)}
-          </p>
+        <ModuleCard
+          title="Order Details"
+          actions={
+            orderId ? (
+              <Link to={`/orders/${orderId}`} className={adminLinkButtonClass}>
+                Open order
+              </Link>
+            ) : null
+          }
+        >
+          <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <p>
+              <strong>Order Number:</strong> {orderNumber}
+            </p>
+            <p>
+              <strong>Order Status:</strong> {request?.order?.orderStatus || '-'}
+            </p>
+            <p>
+              <strong>Payment Status:</strong> {request?.order?.paymentStatus || '-'}
+            </p>
+            <p>
+              <strong>Fulfillment Status:</strong>{' '}
+              <ModuleStatusBadge status={linkedOrderFulfillment.status || 'unfulfilled'} />
+            </p>
+            <p>
+              <strong>Tracking:</strong> {linkedOrderFulfillment.trackingNumber || 'Not recorded'}
+            </p>
+            <p>
+              <strong>Total Amount:</strong> {formatCurrency(request?.order?.totalAmount || 0)}
+            </p>
+          </div>
         </ModuleCard>
 
-        <ModuleCard title="Customer Details" className="md:col-span-2">
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Name:</strong> {customerName}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Email:</strong> {customerEmail}
-          </p>
-          <p className="text-slate-700 dark:text-slate-300">
-            <strong>Phone:</strong> {customerPhone}
-          </p>
+        <ModuleCard
+          title="Customer Details"
+          actions={
+            customerId ? (
+              <Link to={`/customers/${customerId}`} className={adminLinkButtonClass}>
+                Open customer
+              </Link>
+            ) : null
+          }
+        >
+          <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <p>
+              <strong>Name:</strong> {customerName}
+            </p>
+            <p>
+              <strong>Email:</strong> {customerEmail}
+            </p>
+            <p>
+              <strong>Phone:</strong> {customerPhone}
+            </p>
+          </div>
         </ModuleCard>
       </div>
 
-      <ModuleCard title="Update Return Status" className="mt-4">
-        <ModuleFormGrid columns={2}>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Status</label>
-            <select
-              className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              value={selectedStatus}
-              onChange={(event) => setSelectedStatus(event.target.value)}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <ModuleCard title="Update Request Status">
+          <ModuleFormGrid columns={2}>
+            <AdminField label="Status">
+              <AdminSelect
+                value={selectedStatus}
+                disabled={isClosed}
+                onChange={(event) => setSelectedStatus(event.target.value)}
+              >
+                {RETURN_STATUS_OPTIONS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </AdminSelect>
+            </AdminField>
+
+            <AdminField label="Refund Amount">
+              <Input
+                type="number"
+                min="0"
+                max={String(maxRefundAmount || 0)}
+                step="0.01"
+                value={refundAmount}
+                onChange={(event) => setRefundAmount(event.target.value)}
+              />
+            </AdminField>
+
+            <AdminField label="Notes" className="md:col-span-2">
+              <Textarea
+                className="text-slate-800 placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
+                rows={3}
+                value={updateNotes}
+                onChange={(event) => setUpdateNotes(event.target.value)}
+                placeholder="Add notes for this status update"
+              />
+            </AdminField>
+          </ModuleFormGrid>
+
+          <ModuleActions className="mt-4 justify-end" wrap="wrap">
+            <Button type="button" size="sm" disabled={updating || isClosed} onClick={handleStatusUpdate}>
+              {updating ? 'Updating...' : 'Update status'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={closing || isClosed}
+              onClick={() => setCloseDialogOpen(true)}
             >
-              {returnStatuses.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
+              {closing ? 'Closing...' : 'Close request'}
+            </Button>
+          </ModuleActions>
+        </ModuleCard>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Refund Amount</label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={refundAmount}
-              onChange={(event) => setRefundAmount(event.target.value)}
-            />
-          </div>
+        <SalesActivityTimeline
+          logs={activityLogs}
+          loading={activityLoading}
+          error={activityError}
+          emptyMessage="No return activity has been recorded yet."
+        />
+      </div>
 
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Notes</label>
-            <Textarea
-              rows={3}
-              value={updateNotes}
-              onChange={(event) => setUpdateNotes(event.target.value)}
-              placeholder="Add notes for this status update"
-            />
-          </div>
-        </ModuleFormGrid>
-
-        <ModuleActions className="mt-4 justify-end">
-          <Button
-            type="button"
-            size="sm"
-            disabled={updating}
-            onClick={handleStatusUpdate}
-          >
-            {updating ? 'Updating...' : 'Update Status'}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            disabled={closing}
-            onClick={handleCloseRequest}
-          >
-            {closing ? 'Closing...' : 'Close Request'}
-          </Button>
-        </ModuleActions>
-      </ModuleCard>
-
-      <ModuleCard title="Items" className="mt-4">
+      <ModuleCard title="Items">
         <ModuleTable
           columns={itemColumns}
           data={items}
           emptyMessage="No items found."
           renderRow={(item, index) => (
-            <tr key={item?.product?._id || item?.product || `return-item-${index}`} className="text-slate-700 dark:text-slate-300">
-              <td className="font-medium text-slate-800 dark:text-slate-100">{item?.productName || item?.product?.name || 'Product'}</td>
+            <tr
+              key={item?.product?._id || item?.product || `return-item-${index}`}
+              className="text-slate-700 dark:text-slate-300"
+            >
+              <td className="font-medium text-slate-800 dark:text-slate-100">
+                {item?.productName || item?.product?.name || 'Product'}
+              </td>
               <td>{item?.sku || item?.product?.sku || '-'}</td>
               <td>{item?.quantity ?? 0}</td>
               <td className="text-slate-600 dark:text-slate-400">{item?.reason || '-'}</td>
@@ -327,7 +409,18 @@ function ReturnDetails() {
           )}
         />
       </ModuleCard>
-    </section>
+
+      <ConfirmActionDialog
+        open={closeDialogOpen}
+        onOpenChange={setCloseDialogOpen}
+        title="Close return request?"
+        description="Closing a request is a final operator action. Keep the record open if more review or refund work is still pending."
+        confirmLabel={closing ? 'Closing…' : 'Close request'}
+        confirmVariant="destructive"
+        confirmDisabled={closing}
+        onConfirm={handleCloseRequest}
+      />
+    </AdminPage>
   )
 }
 

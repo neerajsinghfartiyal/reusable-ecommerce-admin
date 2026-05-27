@@ -17,6 +17,7 @@ import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
+import PageLoading from '@/components/admin-ui/PageLoading'
 
 const defaultForm = {
   name: '',
@@ -62,10 +63,7 @@ function UnitTypes() {
     setError('')
     try {
       const response = await getUnitTypes()
-      console.log('Unit types list response:', response)
-      console.log('Unit types response data:', response?.data)
       const list = extractList(response, ['unitTypes', 'units'])
-      console.log('First unit type item:', list[0])
       setUnitTypes(list)
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load unit types.')
@@ -209,6 +207,7 @@ function UnitTypes() {
 
   return (
     <AdminPage
+      headerMode="hidden"
       title="Unit Types"
       description="Manage product unit types used for inventory and product measurements."
     >
@@ -261,9 +260,7 @@ function UnitTypes() {
       </ModuleCard>
 
       {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading unit types...</p>
-        </ModuleCard>
+        <PageLoading message="Loading unit types..." />
       ) : unitTypes.length === 0 ? (
         <ModuleEmptyState
           title="No unit types found"

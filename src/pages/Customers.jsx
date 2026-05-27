@@ -1,61 +1,39 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { deleteCustomer, getCustomers, updateCustomer } from '../api/customerApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import ConfirmActionDialog from '@/components/admin-ui/ConfirmActionDialog'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import Pagination from '../components/ui/Pagination'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-
+import PageLoading from '@/components/admin-ui/PageLoading'
+import {
+  extractList,
+  extractPagination,
+  formatDateTime,
+  getCustomerDisplayName,
+  getCustomerStatus,
+  getNumberValue,
+} from '@/lib/sales'
 const statusFilters = ['all', 'active', 'inactive']
 
-const getNumberValue = (...values) => {
-  for (const value of values) {
-    const parsed = Number(value)
-    if (!Number.isNaN(parsed)) return parsed
-  }
-  return 0
-}
-
-const extractList = (response) => {
-  const checks = [
-    response?.data?.customers,
-    response?.customers,
-    response?.data?.data?.customers,
-    response?.data?.items,
-    response?.items,
-    response?.data,
-    response,
-  ]
-
-  for (const value of checks) {
-    if (Array.isArray(value)) return value
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
   }
 
-  return []
+  return status.charAt(0).toUpperCase() + status.slice(1)
 }
-
-const extractPagination = (response) =>
-  response?.data?.data?.pagination ||
-  response?.data?.pagination ||
-  response?.pagination ||
-  {}
-
-const getCustomerName = (customer) =>
-  `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
-  customer?.name ||
-  'Customer'
-
-const getStatus = (customer) => {
-  if (typeof customer?.status === 'string') return customer.status.toLowerCase()
-  if (typeof customer?.isActive === 'boolean') return customer.isActive ? 'active' : 'inactive'
-  return 'active'
-}
+const statusEditOptions = ['active', 'inactive']
 
 function Customers() {
   const navigate = useNavigate()
@@ -71,6 +49,7 @@ function Customers() {
   const [editingId, setEditingId] = useState('')
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState('')
+  const [pendingDeleteCustomer, setPendingDeleteCustomer] = useState(null)
   const [editForm, setEditForm] = useState({
     firstName: '',
     lastName: '',
@@ -95,7 +74,7 @@ function Customers() {
       if (statusFilter !== 'all') params.status = statusFilter
 
       const response = await getCustomers(params)
-      const list = extractList(response)
+      const list = extractList(response, ['customers'])
       const paginationData = extractPagination(response)
 
       setCustomers(list)
@@ -158,7 +137,7 @@ function Customers() {
       lastName: customer?.lastName || '',
       email: customer?.email || '',
       phone: customer?.phone || '',
-      status: getStatus(customer),
+      status: getCustomerStatus(customer),
     })
   }
 
@@ -201,16 +180,9 @@ function Customers() {
     }
   }
 
-  const handleDelete = async (customer) => {
-    const customerId = customer?._id || customer?.id
+  const handleDelete = async () => {
+    const customerId = pendingDeleteCustomer?._id || pendingDeleteCustomer?.id
     if (!customerId) return
-
-    const customerName = getCustomerName(customer)
-    const shouldDelete = window.confirm(
-      `Are you sure you want to delete ${customerName}? This action cannot be undone.`,
-    )
-
-    if (!shouldDelete) return
 
     setDeletingId(customerId)
     setError('')
@@ -219,6 +191,7 @@ function Customers() {
       await deleteCustomer(customerId)
       setSuccessMessage('Customer deleted successfully.')
       if (editingId === customerId) handleEditCancel()
+      setPendingDeleteCustomer(null)
       await loadCustomers()
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to delete customer.')
@@ -241,61 +214,73 @@ function Customers() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Customers"
-        description="View and manage customer accounts, contact details, and status."
-      />
+    <AdminPage
+      headerMode="hidden"
+      title="Customers"
+      description="View and manage customer accounts, contact details, and status."
+    >
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search customers..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search customer name, email, phone..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
-
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Loading customers...</p>
-        </ModuleCard>
-      ) : null}
+      {loading ? <PageLoading message="Loading customers..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50 dark:border-red-900/70 dark:bg-red-950/30">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50 dark:border-blue-900/70 dark:bg-blue-950/30">
-          <p className="text-sm text-blue-700 dark:text-blue-300">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
         <>
+          <div className="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-600 dark:border-slate-800/90 dark:bg-slate-900/40 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Showing {customers.length} of {pagination.totalItems} customers
+            </p>
+            <p>
+              Page <span className="font-semibold text-slate-900 dark:text-slate-100">{pagination.currentPage}</span> of{' '}
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{pagination.totalPages}</span>
+            </p>
+          </div>
+
           {customers.length === 0 ? (
             <ModuleEmptyState
               title="No customers found"
@@ -305,18 +290,17 @@ function Customers() {
             <ModuleTable
               columns={columns}
               data={customers}
+              compact
               emptyMessage="No customers found."
               renderRow={(customer, index) => {
                 const customerId = customer?._id || customer?.id || `customer-${index}`
-                const status = getStatus(customer)
-                const createdAt = customer?.createdAt
-                  ? new Date(customer.createdAt).toLocaleString()
-                  : '-'
+                const status = getCustomerStatus(customer)
+                const createdAt = formatDateTime(customer?.createdAt)
                 const isEditing = editingId === customerId
                 const isDeleting = deletingId === customerId
 
                 return (
-                  <tr key={customerId} className="text-slate-700 dark:text-slate-300">
+                  <tr key={customerId} className="align-top text-slate-700 dark:text-slate-300">
                     <td>
                       {isEditing ? (
                         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -344,7 +328,9 @@ function Customers() {
                           />
                         </div>
                       ) : (
-                        <span className="font-medium text-slate-800 dark:text-slate-100">{getCustomerName(customer)}</span>
+                        <span className="font-medium text-slate-800 dark:text-slate-100">
+                          {getCustomerDisplayName(customer)}
+                        </span>
                       )}
                     </td>
                     <td>
@@ -381,9 +367,9 @@ function Customers() {
                     </td>
                     <td>
                       {isEditing ? (
-                        <select
-                          className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                        <AdminSelect
                           value={editForm.status}
+                          aria-label="Customer status"
                           onChange={(event) =>
                             setEditForm((prev) => ({
                               ...prev,
@@ -391,16 +377,19 @@ function Customers() {
                             }))
                           }
                         >
-                          <option value="active">active</option>
-                          <option value="inactive">inactive</option>
-                        </select>
+                          {statusEditOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </AdminSelect>
                       ) : (
                         <ModuleStatusBadge status={status} />
                       )}
                     </td>
                     <td className="text-slate-600 dark:text-slate-400">{createdAt}</td>
                     <td>
-                      <ModuleActions>
+                      <ModuleActions wrap="wrap">
                         <Button
                           type="button"
                           size="sm"
@@ -444,7 +433,7 @@ function Customers() {
                           size="sm"
                           variant="destructive"
                           disabled={isDeleting}
-                          onClick={() => handleDelete(customer)}
+                          onClick={() => setPendingDeleteCustomer(customer)}
                         >
                           {isDeleting ? 'Deleting...' : 'Delete'}
                         </Button>
@@ -456,17 +445,32 @@ function Customers() {
             />
           )}
 
-          <div className="[&_.pagination-btn]:dark:border-slate-700 [&_.pagination-btn]:dark:bg-slate-900 [&_.pagination-btn]:dark:text-slate-200 [&_.pagination-btn:disabled]:dark:text-slate-500 [&_.pagination-text]:dark:text-slate-400">
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPrevious={goPrev}
-              onNext={goNext}
-            />
-          </div>
+          <AdminPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPrevious={goPrev}
+            onNext={goNext}
+            isPreviousDisabled={pagination.currentPage <= 1}
+            isNextDisabled={pagination.currentPage >= pagination.totalPages}
+          />
         </>
       ) : null}
-    </section>
+
+      <ConfirmActionDialog
+        open={Boolean(pendingDeleteCustomer)}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteCustomer(null)
+        }}
+        title="Delete customer?"
+        description={`Delete ${getCustomerDisplayName(
+          pendingDeleteCustomer || {},
+        )}? This permanently removes the record in the current backend flow.`}
+        confirmLabel={deletingId ? 'Deleting…' : 'Delete customer'}
+        confirmVariant="destructive"
+        confirmDisabled={Boolean(deletingId)}
+        onConfirm={handleDelete}
+      />
+    </AdminPage>
   )
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   createProduct,
@@ -9,7 +9,26 @@ import { getCategories } from '../api/categoryApi'
 import { getBrands } from '../api/brandApi'
 import { getUnitTypes } from '../api/unitTypeApi'
 import { getAttributes } from '../api/attributeApi'
-import { uploadProductImages } from '../api/uploadApi'
+import {
+  appendUniqueGalleryMedia,
+  assetFromPickerSelection,
+  canonicalGalleryMedia,
+  featuredMediaFromProduct,
+  GalleryImageGrid,
+  galleryMediaFromProduct,
+  galleryMediaToMediaIds,
+  galleryMediaToUrls,
+  getReliableMediaIdFromAsset,
+  isSameGalleryAsset,
+  MediaPickerModal,
+  pickerAssetToGalleryMedia,
+  SelectedImagePreview,
+  toStoredImageUrl,
+} from '@/components/media-picker'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -17,7 +36,7 @@ import { Textarea } from '@/components/ui/textarea'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
+import { adminLinkButtonClass } from '@/components/admin-ui/adminStyles'
 
 const defaultFormData = {
   name: '',
@@ -32,7 +51,9 @@ const defaultFormData = {
   shortDescription: '',
   description: '',
   featuredImage: '',
+  featuredMediaId: null,
   galleryImages: [],
+  galleryMediaIds: [],
   attributes: [],
   variations: [],
 }
@@ -41,27 +62,6 @@ const getOptionLabel = (item, fallback) =>
   item?.name || item?.title || item?.label || item?.slug || fallback
 
 const getOptionValue = (item) => item?._id || item?.id || item?.value || ''
-
-const mapUploadUrls = (data) => {
-  if (typeof data?.featuredImage === 'string') return [data.featuredImage]
-  if (Array.isArray(data?.galleryImages)) return data.galleryImages
-  if (Array.isArray(data?.urls)) return data.urls
-  if (Array.isArray(data?.images)) return data.images
-  if (Array.isArray(data?.files)) return data.files
-  if (typeof data?.url === 'string') return [data.url]
-  if (typeof data?.image === 'string') return [data.image]
-  if (typeof data?.file === 'string') return [data.file]
-  return []
-}
-
-const getImageUrl = (imagePath) => {
-  if (!imagePath) return ''
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    return imagePath
-  }
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
-  return `${baseUrl}${imagePath.startsWith('/') ? imagePath : `/${imagePath}`}`
-}
 
 const extractArrayFromResponse = (response, keys = []) => {
   for (const key of keys) {
@@ -108,6 +108,8 @@ const slugPart = (value) =>
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
 
+const GALLERY_MAX_IMAGES = 20
+
 const buildVariationSku = (baseSku, attributes = []) => {
   const parts = attributes
     .map((item) => slugPart(item?.value || item?.label))
@@ -131,11 +133,16 @@ function ProductForm() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [uploadingFeatured, setUploadingFeatured] = useState(false)
-  const [uploadingGallery, setUploadingGallery] = useState(false)
+  const [featuredMedia, setFeaturedMedia] = useState(null)
+  const [featuredPickerOpen, setFeaturedPickerOpen] = useState(false)
+  const [featuredPickerTab, setFeaturedPickerTab] = useState('library')
+  const [featuredPickerSnapshot, setFeaturedPickerSnapshot] = useState([])
+  const [galleryMedia, setGalleryMedia] = useState([])
+  const galleryMediaRef = useRef([])
+  const [galleryPickerOpen, setGalleryPickerOpen] = useState(false)
+  const [galleryPickerTab, setGalleryPickerTab] = useState('library')
+  const [galleryPickerSnapshot, setGalleryPickerSnapshot] = useState([])
   const [error, setError] = useState('')
-  const [featuredPreviewFailed, setFeaturedPreviewFailed] = useState(false)
-  const [galleryPreviewFailedMap, setGalleryPreviewFailedMap] = useState({})
 
   const pageTitle = useMemo(
     () => (isEditMode ? 'Edit Product' : 'Add Product'),
@@ -169,11 +176,6 @@ function ProductForm() {
         const unitTypesResponse = unitTypesRes?.data || unitTypesRes
         const attributesResponse = attributesRes?.data || attributesRes
 
-        console.log('Categories response:', categoriesResponse)
-        console.log('Brands response:', brandsResponse)
-        console.log('Unit types response:', unitTypesResponse)
-        console.log('Loaded attributes:', attributesResponse)
-
         const categoriesData = extractArrayFromResponse(categoriesResponse, [
           'categories',
         ])
@@ -196,6 +198,10 @@ function ProductForm() {
         if (productRes) {
           const product =
             productRes?.data?.data?.product || productRes?.data?.data || productRes?.data
+          const loadedGallery = galleryMediaFromProduct(
+            Array.isArray(product?.galleryImages) ? product.galleryImages : [],
+            product?.galleryMediaIds,
+          )
 
           setFormData({
             name: product?.name || '',
@@ -215,9 +221,10 @@ function ProductForm() {
             description: product?.description || '',
             featuredImage:
               product?.featuredImage || product?.image || product?.thumbnail || '',
-            galleryImages: Array.isArray(product?.galleryImages)
-              ? product.galleryImages
-              : [],
+            featuredMediaId:
+              product?.featuredMediaId?._id ||
+              product?.featuredMediaId ||
+              null,
             attributes: Array.isArray(product?.attributes)
               ? product.attributes
                   .filter((item) => item && typeof item === 'object')
@@ -260,9 +267,25 @@ function ProductForm() {
                       : [],
                   }))
               : [],
+            galleryImages: galleryMediaToUrls(loadedGallery),
+            galleryMediaIds: galleryMediaToMediaIds(loadedGallery),
           })
-          setFeaturedPreviewFailed(false)
-          setGalleryPreviewFailedMap({})
+          setFeaturedMedia(featuredMediaFromProduct(product))
+          galleryMediaRef.current = loadedGallery
+          setGalleryMedia(loadedGallery)
+        } else {
+          setFeaturedMedia(null)
+          galleryMediaRef.current = []
+          setGalleryMedia([])
+          setFeaturedPickerSnapshot([])
+          setGalleryPickerSnapshot([])
+          setFormData((prev) => ({
+            ...prev,
+            featuredImage: '',
+            featuredMediaId: null,
+            galleryImages: [],
+            galleryMediaIds: [],
+          }))
         }
       } catch (err) {
         const message =
@@ -280,14 +303,6 @@ function ProductForm() {
     const { name, value } = event.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
-
-  useEffect(() => {
-    console.log('Product form attributes:', formData.attributes)
-  }, [formData.attributes])
-
-  useEffect(() => {
-    console.log('Product form variations:', formData.variations)
-  }, [formData.variations])
 
   const availableAttributeOptions = attributes.filter((attributeItem) => {
     const attrId = attributeItem?._id || attributeItem?.id
@@ -442,93 +457,67 @@ function ProductForm() {
     }))
   }
 
-  const handleFeaturedUpload = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setUploadingFeatured(true)
-    setError('')
-
-    try {
-      const uploadData = new FormData()
-      uploadData.append('featuredImage', file)
-      const response = await uploadProductImages(uploadData)
-      const uploadPayload = response?.data?.data || response?.data || {}
-      const featuredUrl =
-        uploadPayload?.featuredImage || mapUploadUrls(uploadPayload)?.[0] || ''
-
-      if (featuredUrl) {
-        setFormData((prev) => ({ ...prev, featuredImage: featuredUrl }))
-        setFeaturedPreviewFailed(false)
-      } else {
-        throw new Error('Image upload failed')
-      }
-    } catch (err) {
-      console.error(
-        'Product image upload failed:',
-        err?.response?.data || err?.message,
-      )
-      const message =
-        err?.response?.data?.message || 'Failed to upload featured image.'
-      setError(message)
-    } finally {
-      setUploadingFeatured(false)
-      event.target.value = ''
-    }
+  const openFeaturedPicker = (tab) => {
+    setFeaturedPickerSnapshot(featuredMedia ? [featuredMedia] : [])
+    setFeaturedPickerTab(tab)
+    setFeaturedPickerOpen(true)
   }
 
-  const handleGalleryUpload = async (event) => {
-    const files = event.target.files
-    if (!files || files.length === 0) return
+  const handleFeaturedPickerConfirm = (assets) => {
+    const selected = Array.isArray(assets) ? assets[0] : assets
+    const asset = assetFromPickerSelection(selected)
+    if (!asset?.url) return
 
-    setUploadingGallery(true)
-    setError('')
-
-    try {
-      const uploadData = new FormData()
-      Array.from(files).forEach((file) => {
-        uploadData.append('galleryImages', file)
-      })
-
-      const response = await uploadProductImages(uploadData)
-      const uploadPayload = response?.data?.data || response?.data || {}
-      const urls = Array.isArray(uploadPayload?.galleryImages)
-        ? uploadPayload.galleryImages
-        : mapUploadUrls(uploadPayload)
-
-      if (urls.length > 0) {
-        setFormData((prev) => ({
-          ...prev,
-          galleryImages: [...prev.galleryImages, ...urls],
-        }))
-        setGalleryPreviewFailedMap({})
-      } else {
-        throw new Error('Image upload failed')
-      }
-    } catch (err) {
-      console.error(
-        'Product image upload failed:',
-        err?.response?.data || err?.message,
-      )
-      const message =
-        err?.response?.data?.message || 'Failed to upload gallery images.'
-      setError(message)
-    } finally {
-      setUploadingGallery(false)
-      event.target.value = ''
-    }
-  }
-
-  const removeGalleryImage = (imageUrl) => {
+    setFeaturedMedia(asset)
     setFormData((prev) => ({
       ...prev,
-      galleryImages: prev.galleryImages.filter((url) => url !== imageUrl),
+      featuredImage: asset.url,
+      featuredMediaId: asset.mediaId || null,
     }))
-    setGalleryPreviewFailedMap((prev) => {
-      const next = { ...prev }
-      delete next[imageUrl]
-      return next
-    })
+  }
+
+  const handleRemoveFeaturedMedia = () => {
+    setFeaturedMedia(null)
+    setFormData((prev) => ({
+      ...prev,
+      featuredImage: '',
+      featuredMediaId: null,
+    }))
+  }
+
+  const applyGalleryMedia = (nextMedia) => {
+    const canonical = canonicalGalleryMedia(nextMedia, GALLERY_MAX_IMAGES)
+    galleryMediaRef.current = canonical
+    setGalleryMedia(canonical)
+    setFormData((prev) => ({
+      ...prev,
+      galleryImages: galleryMediaToUrls(canonical),
+      galleryMediaIds: galleryMediaToMediaIds(canonical),
+    }))
+  }
+
+  const openGalleryPicker = (tab) => {
+    setGalleryPickerSnapshot([...galleryMedia])
+    setGalleryPickerTab(tab)
+    setGalleryPickerOpen(true)
+  }
+
+  const handleGalleryPickerConfirm = (assets) => {
+    const selected = Array.isArray(assets) ? assets : assets ? [assets] : []
+    const incoming = selected.map(pickerAssetToGalleryMedia).filter(Boolean)
+    const next = appendUniqueGalleryMedia(
+      galleryMediaRef.current,
+      incoming,
+      GALLERY_MAX_IMAGES,
+    )
+    applyGalleryMedia(next)
+  }
+
+  const handleRemoveGalleryMedia = (asset) => {
+    const next = galleryMediaRef.current.filter(
+      (item) => !isSameGalleryAsset(item, asset),
+    )
+    applyGalleryMedia(next)
   }
 
   const handleSubmit = async (event) => {
@@ -537,6 +526,7 @@ function ProductForm() {
     setError('')
 
     try {
+      const canonicalGallery = canonicalGalleryMedia(galleryMedia, GALLERY_MAX_IMAGES)
       const payload = {
         name: formData.name,
         sku: formData.sku,
@@ -550,9 +540,9 @@ function ProductForm() {
         shortDescription: formData.shortDescription || '',
         description: formData.description || '',
         featuredImage: formData.featuredImage || '',
-        galleryImages: Array.isArray(formData.galleryImages)
-          ? formData.galleryImages
-          : [],
+        featuredMediaId: getReliableMediaIdFromAsset(featuredMedia) || null,
+        galleryImages: galleryMediaToUrls(canonicalGallery),
+        galleryMediaIds: galleryMediaToMediaIds(canonicalGallery),
         attributes: Array.isArray(formData.attributes)
           ? formData.attributes.map((item) => ({
               attribute: item.attribute,
@@ -611,616 +601,623 @@ function ProductForm() {
 
   if (loading) {
     return (
-      <section>
-        <ModuleHeader title={pageTitle} description={pageDescription} />
+      <AdminPage headerMode="compact" title={pageTitle} description={pageDescription}>
         <ModuleCard>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Loading form...</p>
+          <AdminAlert type="info" title="Loading">
+            Loading form...
+          </AdminAlert>
         </ModuleCard>
-      </section>
+      </AdminPage>
     )
   }
 
   return (
-    <section>
-      <ModuleHeader
-        title={pageTitle}
-        description={pageDescription}
-        actions={
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            onClick={() => navigate('/products')}
-            disabled={saving}
-          >
-            Back to Products
-          </Button>
-        }
-      />
+    <AdminPage
+      headerMode="compact"
+      title={pageTitle}
+      description={pageDescription}
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={adminLinkButtonClass}
+          onClick={() => navigate('/products')}
+          disabled={saving}
+        >
+          Back to Products
+        </Button>
+      }
+    >
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50 dark:border-red-900/70 dark:bg-red-950/30">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
-      <form onSubmit={handleSubmit}>
-        <ModuleCard title="Basic Information">
-          <ModuleFormGrid columns={3}>
-            <div>
-              <label htmlFor="name" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Name
-              </label>
-              <Input
-                id="name"
-                name="name"
-                value={formData.name}
-                onChange={handleFieldChange}
-                required
-              />
-            </div>
+      <form onSubmit={handleSubmit} className="product-form">
+        <div className="product-form-layout">
+          <div className="product-form-main">
+          <ModuleCard title="Basic Information" description="Product identity and catalog naming." className="product-form-section">
+            <ModuleFormGrid columns={2}>
+              <AdminField label="Name" required>
+                <Input
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleFieldChange}
+                  required
+                />
+              </AdminField>
 
-            <div>
-              <label htmlFor="sku" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                SKU
-              </label>
-              <Input
-                id="sku"
-                name="sku"
-                value={formData.sku}
-                onChange={handleFieldChange}
-              />
-            </div>
+              <AdminField label="SKU">
+                <Input
+                  id="sku"
+                  name="sku"
+                  value={formData.sku}
+                  onChange={handleFieldChange}
+                />
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-            <div>
-              <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Status
-              </label>
-              <select
-                id="status"
-                name="status"
-                value={formData.status}
-                onChange={handleFieldChange}
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="draft">draft</option>
-                <option value="published">published</option>
-              </select>
-            </div>
-          </ModuleFormGrid>
-        </ModuleCard>
+          <ModuleCard title="Descriptions" description="Short and long-form product copy." className="product-form-section">
+            <ModuleFormGrid columns={1}>
+              <AdminField label="Short Description">
+                <Textarea
+                  id="shortDescription"
+                  name="shortDescription"
+                  value={formData.shortDescription}
+                  onChange={handleFieldChange}
+                  rows={3}
+                />
+              </AdminField>
+              <AdminField label="Description">
+                <Textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleFieldChange}
+                  rows={6}
+                />
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
 
-        <ModuleCard title="Organization">
-          <ModuleFormGrid columns={3}>
-            <div>
-              <label htmlFor="category" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Category
-              </label>
-              <select
-                id="category"
-                name="category"
-                value={formData.category}
-                onChange={handleFieldChange}
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="">Select category</option>
-                {categories.map((category) => {
-                  if (!category?._id) return null
-                  return (
-                    <option key={category._id} value={category._id}>
-                      {category?.name || 'Unnamed category'}
-                    </option>
-                  )
-                })}
-              </select>
-              {categories.length === 0 ? (
-                <p className="helper-text dark:text-slate-400">
-                  No categories found. Please create a category first.
-                </p>
-              ) : null}
-            </div>
+          <ModuleCard title="Product Attributes" description="Assign attributes and variation options." className="product-form-section">
+            {attributes.length === 0 ? (
+              <p className="helper-text dark:text-slate-400">
+                No attributes found. Create attributes first from Catalog &gt; Attributes.
+              </p>
+            ) : (
+              <>
+                <div className="product-attribute-picker flex flex-col gap-2 md:flex-row">
+                  <AdminSelect
+                    value={selectedAttributeId}
+                    onChange={(event) => setSelectedAttributeId(event.target.value)}
+                    aria-label="Select product attribute"
+                  >
+                    <option value="">Select Attribute</option>
+                    {availableAttributeOptions.map((item) => {
+                      const attrId = item?._id || item?.id
+                      if (!attrId) return null
+                      return (
+                        <option key={attrId} value={attrId}>
+                          {item?.name || 'Unnamed attribute'}
+                        </option>
+                      )
+                    })}
+                  </AdminSelect>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddAttribute}
+                    disabled={!selectedAttributeId}
+                  >
+                    Add Attribute
+                  </Button>
+                </div>
 
-            <div>
-              <label htmlFor="brand" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Brand
-              </label>
-              <select
-                id="brand"
-                name="brand"
-                value={formData.brand}
-                onChange={handleFieldChange}
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="">Select brand</option>
-                {brands.map((brand) => {
-                  if (!brand?._id) return null
-                  return (
-                    <option key={brand._id} value={brand._id}>
-                      {brand?.name || 'Unnamed brand'}
-                    </option>
-                  )
-                })}
-              </select>
-              {brands.length === 0 ? (
-                <p className="helper-text dark:text-slate-400">
-                  No brands found. Please create a brand first.
-                </p>
-              ) : null}
-            </div>
-
-            <div>
-              <label htmlFor="unitType" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Unit Type
-              </label>
-              <select
-                id="unitType"
-                name="unitType"
-                value={formData.unitType}
-                onChange={handleFieldChange}
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="">Select unit type</option>
-                {unitTypes.map((unitType) => {
-                  if (!unitType?._id) return null
-                  return (
-                    <option key={unitType._id} value={unitType._id}>
-                      {unitType?.name || 'Unnamed unit type'}
-                    </option>
-                  )
-                })}
-              </select>
-              {unitTypes.length === 0 ? (
-                <p className="helper-text dark:text-slate-400">
-                  No unit types found. Please create a unit type first.
-                </p>
-              ) : null}
-            </div>
-          </ModuleFormGrid>
-        </ModuleCard>
-
-        <ModuleCard title="Pricing & Inventory">
-          <ModuleFormGrid columns={3}>
-            <div>
-              <label htmlFor="price" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Price
-              </label>
-              <Input
-                id="price"
-                name="price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.price}
-                onChange={handleFieldChange}
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="salePrice" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Sale Price
-              </label>
-              <Input
-                id="salePrice"
-                name="salePrice"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.salePrice}
-                onChange={handleFieldChange}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="quantity" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Quantity
-              </label>
-              <Input
-                id="quantity"
-                name="quantity"
-                type="number"
-                min="0"
-                value={formData.quantity}
-                onChange={handleFieldChange}
-                required
-              />
-            </div>
-          </ModuleFormGrid>
-        </ModuleCard>
-
-        <ModuleCard title="Descriptions">
-          <ModuleFormGrid columns={1}>
-            <div>
-              <label htmlFor="shortDescription" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Short Description
-              </label>
-              <Textarea
-                id="shortDescription"
-                name="shortDescription"
-                value={formData.shortDescription}
-                onChange={handleFieldChange}
-                rows={3}
-              />
-            </div>
-            <div>
-              <label htmlFor="description" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Description
-              </label>
-              <Textarea
-                id="description"
-                name="description"
-                value={formData.description}
-                onChange={handleFieldChange}
-                rows={5}
-              />
-            </div>
-          </ModuleFormGrid>
-        </ModuleCard>
-
-        <ModuleCard title="Media">
-          <ModuleFormGrid columns={2}>
-            <div>
-              <label htmlFor="featuredImage" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Featured Image
-              </label>
-              <Input
-                id="featuredImage"
-                type="file"
-                accept="image/*"
-                onChange={handleFeaturedUpload}
-              />
-              {uploadingFeatured ? (
-                <p className="helper-text dark:text-slate-400">Uploading featured image...</p>
-              ) : null}
-              {formData.featuredImage ? (
-                featuredPreviewFailed ? (
-                  <p className="helper-text dark:text-slate-400">Image preview unavailable</p>
+                {formData.attributes.length === 0 ? (
+                  <p className="helper-text dark:text-slate-400">No attributes selected for this product.</p>
                 ) : (
-                  <img
-                    src={getImageUrl(formData.featuredImage)}
-                    alt="Featured preview"
-                    className="image-preview-featured"
-                    onError={() => setFeaturedPreviewFailed(true)}
-                  />
-                )
-              ) : null}
-            </div>
+                  <div className="selected-attributes-grid">
+                    {formData.attributes.map((assigned) => {
+                      const sourceAttribute = attributes.find(
+                        (item) => (item?._id || item?.id) === assigned.attribute,
+                      )
+                      const sourceValues = Array.isArray(sourceAttribute?.values)
+                        ? sourceAttribute.values
+                        : []
 
-            <div>
-              <label htmlFor="galleryImages" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Gallery Images
-              </label>
-              <Input
-                id="galleryImages"
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleGalleryUpload}
-              />
-              {uploadingGallery ? (
-                <p className="helper-text dark:text-slate-400">Uploading gallery images...</p>
-              ) : null}
-
-              <div className="gallery-grid">
-                {formData.galleryImages.map((url) => (
-                  <div key={url} className="gallery-item dark:border-slate-700 dark:bg-slate-900">
-                    {galleryPreviewFailedMap[url] ? (
-                      <p className="helper-text dark:text-slate-400">Image preview unavailable</p>
-                    ) : (
-                      <img
-                        src={getImageUrl(url)}
-                        alt="Gallery preview"
-                        className="image-preview-gallery"
-                        onError={() =>
-                          setGalleryPreviewFailedMap((prev) => ({
-                            ...prev,
-                            [url]: true,
-                          }))
-                        }
-                      />
-                    )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      className="mt-2 h-7 px-2 text-xs"
-                      onClick={() => removeGalleryImage(url)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </ModuleFormGrid>
-        </ModuleCard>
-
-        <ModuleCard title="Product Attributes">
-          {attributes.length === 0 ? (
-            <p className="helper-text dark:text-slate-400">
-              No attributes found. Create attributes first from Catalog &gt; Attributes.
-            </p>
-          ) : (
-            <>
-              <div className="product-attribute-picker flex flex-col gap-2 md:flex-row">
-                <select
-                  className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  value={selectedAttributeId}
-                  onChange={(event) => setSelectedAttributeId(event.target.value)}
-                >
-                  <option value="">Select Attribute</option>
-                  {availableAttributeOptions.map((item) => {
-                    const attrId = item?._id || item?.id
-                    if (!attrId) return null
-                    return (
-                      <option key={attrId} value={attrId}>
-                        {item?.name || 'Unnamed attribute'}
-                      </option>
-                    )
-                  })}
-                </select>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleAddAttribute}
-                  disabled={!selectedAttributeId}
-                >
-                  Add Attribute
-                </Button>
-              </div>
-
-              {formData.attributes.length === 0 ? (
-                <p className="helper-text dark:text-slate-400">No attributes selected for this product.</p>
-              ) : (
-                <div className="selected-attributes-grid">
-                  {formData.attributes.map((assigned) => {
-                    const sourceAttribute = attributes.find(
-                      (item) => (item?._id || item?.id) === assigned.attribute,
-                    )
-                    const sourceValues = Array.isArray(sourceAttribute?.values)
-                      ? sourceAttribute.values
-                      : []
-
-                    return (
-                      <div key={assigned.attribute} className="selected-attribute-card dark:border-slate-700 dark:bg-slate-900">
-                        <div className="selected-attribute-head">
-                          <div>
-                            <p className="item-title dark:text-slate-100">{assigned.name || 'Attribute'}</p>
-                            <p className="item-subtitle dark:text-slate-400">
-                              Type: {sourceAttribute?.type || 'dropdown'}
-                            </p>
+                      return (
+                        <div key={assigned.attribute} className="selected-attribute-card dark:border-slate-700 dark:bg-slate-900">
+                          <div className="selected-attribute-head">
+                            <div>
+                              <p className="item-title dark:text-slate-100">{assigned.name || 'Attribute'}</p>
+                              <p className="item-subtitle dark:text-slate-400">
+                                Type: {sourceAttribute?.type || 'dropdown'}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => handleRemoveAttribute(assigned.attribute)}
+                            >
+                              Remove Attribute
+                            </Button>
                           </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => handleRemoveAttribute(assigned.attribute)}
-                          >
-                            Remove Attribute
-                          </Button>
-                        </div>
 
-                        <div className="selected-attribute-toggles">
-                          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <Checkbox
-                              checked={assigned.isVisible !== false}
-                              onCheckedChange={(checked) =>
-                                handleAssignedAttributeChange(
-                                  assigned.attribute,
-                                  'isVisible',
-                                  checked === true,
+                          <div className="selected-attribute-toggles">
+                            <AdminField label="Visible">
+                              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                <Checkbox
+                                  checked={assigned.isVisible !== false}
+                                  onCheckedChange={(checked) =>
+                                    handleAssignedAttributeChange(
+                                      assigned.attribute,
+                                      'isVisible',
+                                      checked === true,
+                                    )
+                                  }
+                                />
+                                Visible on product page
+                              </label>
+                            </AdminField>
+
+                            <AdminField label="Variation Attribute">
+                              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                <Checkbox
+                                  checked={assigned.isVariationAttribute !== false}
+                                  onCheckedChange={(checked) =>
+                                    handleAssignedAttributeChange(
+                                      assigned.attribute,
+                                      'isVariationAttribute',
+                                      checked === true,
+                                    )
+                                  }
+                                />
+                                Used for variations
+                              </label>
+                            </AdminField>
+                          </div>
+
+                          {sourceValues.length === 0 ? (
+                            <p className="helper-text dark:text-slate-400">No values available.</p>
+                          ) : (
+                            <div className="attribute-values-chips">
+                              {sourceValues.map((valueItem, index) => {
+                                const key = valueItem?.value || valueItem?.label || `value-${index}`
+                                const checked = assigned.values.some(
+                                  (selected) =>
+                                    (selected?.value || selected?.label) ===
+                                    (valueItem?.value || valueItem?.label),
                                 )
-                              }
-                            />
-                            Visible on product page
-                          </label>
+                                const colorCode = valueItem?.colorCode || ''
 
-                          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <Checkbox
-                              checked={assigned.isVariationAttribute !== false}
-                              onCheckedChange={(checked) =>
-                                handleAssignedAttributeChange(
-                                  assigned.attribute,
-                                  'isVariationAttribute',
-                                  checked === true,
-                                )
-                              }
-                            />
-                            Used for variations
-                          </label>
-                        </div>
-
-                        {sourceValues.length === 0 ? (
-                          <p className="helper-text dark:text-slate-400">No values available.</p>
-                        ) : (
-                          <div className="attribute-values-chips">
-                            {sourceValues.map((valueItem, index) => {
-                              const key = valueItem?.value || valueItem?.label || `value-${index}`
-                              const checked = assigned.values.some(
-                                (selected) =>
-                                  (selected?.value || selected?.label) ===
-                                  (valueItem?.value || valueItem?.label),
-                              )
-                              const colorCode = valueItem?.colorCode || ''
-
-                              return (
-                                <label
-                                  key={key}
-                                  className={`attribute-value-chip-option dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 ${
-                                    checked ? 'is-selected' : ''
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() =>
-                                      handleToggleAttributeValue(assigned.attribute, valueItem)
-                                    }
-                                  />
-                                  {colorCode ? (
-                                    <span
-                                      className="attribute-color-dot"
-                                      style={{ backgroundColor: colorCode }}
+                                return (
+                                  <label
+                                    key={key}
+                                    className={`attribute-value-chip-option dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 ${
+                                      checked ? 'is-selected' : ''
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() =>
+                                        handleToggleAttributeValue(assigned.attribute, valueItem)
+                                      }
                                     />
-                                  ) : null}
-                                  <span>{valueItem?.label || valueItem?.value || 'Value'}</span>
-                                </label>
-                              )
-                            })}
+                                    {colorCode ? (
+                                      <span
+                                        className="attribute-color-dot"
+                                        style={{ backgroundColor: colorCode }}
+                                      />
+                                    ) : null}
+                                    <span>{valueItem?.label || valueItem?.value || 'Value'}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </ModuleCard>
+
+          <ModuleCard title="Product Variations" description="Generate and configure SKU-level variations." className="product-form-section">
+            <div className="product-variations-panel min-w-0">
+            {formData.attributes.length === 0 ? (
+              <p className="helper-text dark:text-slate-400">
+                Select attributes and mark them as Used for variations to generate variations.
+              </p>
+            ) : variationAttributesMissingValues ? (
+              <p className="helper-text dark:text-slate-400">
+                Selected variation attributes need values before variations can be generated.
+              </p>
+            ) : variationAttributes.length === 0 ? (
+              <p className="helper-text dark:text-slate-400">
+                Select attributes and mark them as Used for variations to generate variations.
+              </p>
+            ) : (
+              <>
+                <div className="variations-toolbar flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleGenerateVariations}
+                  >
+                    Generate Variations
+                  </Button>
+                  <p className="helper-text variation-count-text dark:text-slate-400">
+                    {formData.variations.length} variations configured
+                  </p>
+                </div>
+
+                {formData.variations.length === 0 ? (
+                  <p className="helper-text dark:text-slate-400">No variations generated yet.</p>
+                ) : (
+                  <div className="variations-grid">
+                    {formData.variations.map((variation, index) => {
+                      const combinationText = Array.isArray(variation?.attributes)
+                        ? variation.attributes
+                            .map((item) => item?.label || item?.value || item?.name)
+                            .filter(Boolean)
+                            .join(' / ')
+                        : ''
+
+                      return (
+                        <div key={`variation-${index}`} className="variation-card">
+                          <p className="variation-combination">
+                            {combinationText || `Variation ${index + 1}`}
+                          </p>
+                          <div className="variation-fields">
+                            <Input
+                              type="text"
+                              placeholder="SKU"
+                              value={variation?.sku || ''}
+                              onChange={(event) =>
+                                handleVariationFieldChange(index, 'sku', event.target.value)
+                              }
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Price"
+                              value={variation?.price ?? ''}
+                              onChange={(event) =>
+                                handleVariationFieldChange(index, 'price', event.target.value)
+                              }
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Sale Price"
+                              value={variation?.salePrice ?? ''}
+                              onChange={(event) =>
+                                handleVariationFieldChange(index, 'salePrice', event.target.value)
+                              }
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="Quantity"
+                              value={variation?.quantity ?? 0}
+                              onChange={(event) =>
+                                handleVariationFieldChange(index, 'quantity', event.target.value)
+                              }
+                            />
+                            <Input
+                              type="text"
+                              placeholder="Image URL"
+                              value={variation?.image || ''}
+                              onChange={(event) =>
+                                handleVariationFieldChange(index, 'image', event.target.value)
+                              }
+                            />
+                            <AdminSelect
+                              value={variation?.status || 'active'}
+                              onChange={(event) =>
+                                handleVariationFieldChange(index, 'status', event.target.value)
+                              }
+                              aria-label="Variation status"
+                            >
+                              <option value="active">active</option>
+                              <option value="inactive">inactive</option>
+                              <option value="draft">draft</option>
+                            </AdminSelect>
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </ModuleCard>
+                          <div className="variation-actions">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => handleRemoveVariation(index)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+            </div>
+          </ModuleCard>
+          </div>
 
-        <ModuleCard title="Product Variations">
-          {formData.attributes.length === 0 ? (
-            <p className="helper-text dark:text-slate-400">
-              Select attributes and mark them as Used for variations to generate variations.
-            </p>
-          ) : variationAttributesMissingValues ? (
-            <p className="helper-text dark:text-slate-400">
-              Selected variation attributes need values before variations can be generated.
-            </p>
-          ) : variationAttributes.length === 0 ? (
-            <p className="helper-text dark:text-slate-400">
-              Select attributes and mark them as Used for variations to generate variations.
-            </p>
-          ) : (
-            <>
-              <div className="variations-toolbar flex items-center justify-between gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleGenerateVariations}
+          <aside className="product-form-sidebar">
+            <ModuleCard title="Publishing" description="Control catalog visibility." className="product-form-section">
+              <AdminField label="Status">
+                <AdminSelect
+                  id="status"
+                  name="status"
+                  value={formData.status}
+                  onChange={handleFieldChange}
                 >
-                  Generate Variations
-                </Button>
-                <p className="helper-text variation-count-text dark:text-slate-400">
-                  {formData.variations.length} variations configured
-                </p>
-              </div>
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                  <option value="inactive">Inactive</option>
+                </AdminSelect>
+              </AdminField>
+            </ModuleCard>
 
-              {formData.variations.length === 0 ? (
-                <p className="helper-text dark:text-slate-400">No variations generated yet.</p>
-              ) : (
-                <div className="variations-grid">
-                  {formData.variations.map((variation, index) => {
-                    const combinationText = Array.isArray(variation?.attributes)
-                      ? variation.attributes
-                          .map((item) => item?.label || item?.value || item?.name)
-                          .filter(Boolean)
-                          .join(' / ')
+            <ModuleCard title="Organization" description="Category, brand, and unit." className="product-form-section">
+              <ModuleFormGrid columns={1}>
+                <AdminField
+                  label="Category"
+                  description={
+                    categories.length === 0
+                      ? 'No categories found. Please create a category first.'
                       : ''
+                  }
+                >
+                  <AdminSelect
+                    id="category"
+                    name="category"
+                    value={formData.category}
+                    onChange={handleFieldChange}
+                  >
+                    <option value="">Select category</option>
+                    {categories.map((category) => {
+                      if (!category?._id) return null
+                      return (
+                        <option key={category._id} value={category._id}>
+                          {category?.name || 'Unnamed category'}
+                        </option>
+                      )
+                    })}
+                  </AdminSelect>
+                </AdminField>
 
-                    return (
-                      <div key={`variation-${index}`} className="variation-card dark:border-slate-700 dark:bg-slate-900">
-                        <p className="variation-combination dark:text-slate-100">
-                          {combinationText || `Variation ${index + 1}`}
-                        </p>
-                        <div className="variation-fields">
-                          <Input
-                            type="text"
-                            placeholder="SKU"
-                            value={variation?.sku || ''}
-                            onChange={(event) =>
-                              handleVariationFieldChange(index, 'sku', event.target.value)
-                            }
-                          />
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="Price"
-                            value={variation?.price ?? ''}
-                            onChange={(event) =>
-                              handleVariationFieldChange(index, 'price', event.target.value)
-                            }
-                          />
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="Sale Price"
-                            value={variation?.salePrice ?? ''}
-                            onChange={(event) =>
-                              handleVariationFieldChange(index, 'salePrice', event.target.value)
-                            }
-                          />
-                          <Input
-                            type="number"
-                            min="0"
-                            placeholder="Quantity"
-                            value={variation?.quantity ?? 0}
-                            onChange={(event) =>
-                              handleVariationFieldChange(index, 'quantity', event.target.value)
-                            }
-                          />
-                          <Input
-                            type="text"
-                            placeholder="Image URL"
-                            value={variation?.image || ''}
-                            onChange={(event) =>
-                              handleVariationFieldChange(index, 'image', event.target.value)
-                            }
-                          />
-                          <select
-                            className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                            value={variation?.status || 'active'}
-                            onChange={(event) =>
-                              handleVariationFieldChange(index, 'status', event.target.value)
-                            }
-                          >
-                            <option value="active">active</option>
-                            <option value="inactive">inactive</option>
-                            <option value="draft">draft</option>
-                          </select>
-                        </div>
-                        <div className="variation-actions">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => handleRemoveVariation(index)}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </ModuleCard>
+                <AdminField
+                  label="Brand"
+                  description={
+                    brands.length === 0 ? 'No brands found. Please create a brand first.' : ''
+                  }
+                >
+                  <AdminSelect
+                    id="brand"
+                    name="brand"
+                    value={formData.brand}
+                    onChange={handleFieldChange}
+                  >
+                    <option value="">Select brand</option>
+                    {brands.map((brand) => {
+                      if (!brand?._id) return null
+                      return (
+                        <option key={brand._id} value={brand._id}>
+                          {brand?.name || 'Unnamed brand'}
+                        </option>
+                      )
+                    })}
+                  </AdminSelect>
+                </AdminField>
 
-        <ModuleCard title="Actions">
-          <ModuleActions className="justify-end">
+                <AdminField
+                  label="Unit Type"
+                  description={
+                    unitTypes.length === 0
+                      ? 'No unit types found. Please create a unit type first.'
+                      : ''
+                  }
+                >
+                  <AdminSelect
+                    id="unitType"
+                    name="unitType"
+                    value={formData.unitType}
+                    onChange={handleFieldChange}
+                  >
+                    <option value="">Select unit type</option>
+                    {unitTypes.map((unitType) => {
+                      if (!unitType?._id) return null
+                      return (
+                        <option key={unitType._id} value={unitType._id}>
+                          {unitType?.name || 'Unnamed unit type'}
+                        </option>
+                      )
+                    })}
+                  </AdminSelect>
+                </AdminField>
+              </ModuleFormGrid>
+            </ModuleCard>
+
+            <ModuleCard title="Pricing & Inventory" description="Base price and stock." className="product-form-section">
+              <ModuleFormGrid columns={1}>
+                <AdminField label="Price" required>
+                  <Input
+                    id="price"
+                    name="price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.price}
+                    onChange={handleFieldChange}
+                    required
+                  />
+                </AdminField>
+
+                <AdminField label="Sale Price">
+                  <Input
+                    id="salePrice"
+                    name="salePrice"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.salePrice}
+                    onChange={handleFieldChange}
+                  />
+                </AdminField>
+
+                <AdminField label="Quantity" required>
+                  <Input
+                    id="quantity"
+                    name="quantity"
+                    type="number"
+                    min="0"
+                    value={formData.quantity}
+                    onChange={handleFieldChange}
+                    required
+                  />
+                </AdminField>
+              </ModuleFormGrid>
+            </ModuleCard>
+
+            <ModuleCard title="Media" description="Featured image and gallery." className="product-form-section">
+              <div className="space-y-6">
+                <AdminField
+                  label="Featured Image"
+                  description="Primary catalog image."
+                >
+                  <div className="product-media-zone space-y-3">
+                    <SelectedImagePreview
+                      asset={featuredMedia}
+                      onRemove={handleRemoveFeaturedMedia}
+                    />
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => openFeaturedPicker('library')}
+                      >
+                        Media Library
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="w-full"
+                        onClick={() => openFeaturedPicker('upload')}
+                      >
+                        Upload New
+                      </Button>
+                    </div>
+                  </div>
+                  <MediaPickerModal
+                    open={featuredPickerOpen}
+                    onOpenChange={setFeaturedPickerOpen}
+                    mode="single"
+                    mediaType="image"
+                    maxSelection={1}
+                    initialTab={featuredPickerTab}
+                    selectedAssets={featuredPickerSnapshot}
+                    onConfirm={handleFeaturedPickerConfirm}
+                    uploadAccept="image/*"
+                    defaultFolder="products"
+                    title="Featured image"
+                    description="Select one image for the product featured image."
+                  />
+                </AdminField>
+
+                <AdminField
+                  label="Gallery"
+                  description={`${galleryMedia.length} / ${GALLERY_MAX_IMAGES} images selected`}
+                >
+                  <div className="product-media-zone space-y-3">
+                    <GalleryImageGrid
+                      assets={galleryMedia}
+                      onRemove={handleRemoveGalleryMedia}
+                      emptyMessage="No gallery images yet. Add from library or upload."
+                    />
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        disabled={galleryMedia.length >= GALLERY_MAX_IMAGES}
+                        onClick={() => openGalleryPicker('library')}
+                      >
+                        Media Library
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="w-full"
+                        disabled={galleryMedia.length >= GALLERY_MAX_IMAGES}
+                        onClick={() => openGalleryPicker('upload')}
+                      >
+                        Upload New
+                      </Button>
+                    </div>
+                  </div>
+                  <MediaPickerModal
+                    open={galleryPickerOpen}
+                    onOpenChange={setGalleryPickerOpen}
+                    mode="multiple"
+                    mediaType="image"
+                    maxSelection={GALLERY_MAX_IMAGES}
+                    initialTab={galleryPickerTab}
+                    selectedAssets={galleryPickerSnapshot}
+                    onConfirm={handleGalleryPickerConfirm}
+                    uploadAccept="image/*"
+                    defaultFolder="products"
+                    title="Gallery images"
+                    description={`Select up to ${GALLERY_MAX_IMAGES} images. Existing selections are included in your draft.`}
+                  />
+                </AdminField>
+              </div>
+            </ModuleCard>
+          </aside>
+        </div>
+
+        <div className="product-form-actions-bar">
+          <p className="product-form-actions-hint hidden text-sm text-slate-500 sm:block dark:text-slate-400">
+            {isEditMode ? 'Save changes to update this product.' : 'Create a new catalog product.'}
+          </p>
+          <ModuleActions className="justify-end sm:ml-auto">
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="outline"
               onClick={() => navigate('/products')}
               disabled={saving}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={saving}>
-              {saving ? 'Saving...' : 'Save Product'}
+            <Button type="submit" size="default" disabled={saving} className="min-w-[120px]">
+              {saving ? 'Saving…' : isEditMode ? 'Save changes' : 'Save product'}
             </Button>
           </ModuleActions>
-        </ModuleCard>
+        </div>
       </form>
-    </section>
+    </AdminPage>
   )
 }
 

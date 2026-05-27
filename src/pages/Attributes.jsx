@@ -6,6 +6,8 @@ import {
   updateAttribute,
 } from '../api/attributeApi'
 import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
 import AdminField from '@/components/admin-ui/AdminField'
 import AdminPage from '@/components/admin-ui/AdminPage'
 import AdminPagination from '@/components/admin-ui/AdminPagination'
@@ -20,7 +22,7 @@ import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
+import PageLoading from '@/components/admin-ui/PageLoading'
 import {
   adminHelperTextClass,
   adminInputClass,
@@ -36,6 +38,46 @@ const statusFilters = ['all', 'active', 'inactive']
 const typeFilters = ['all', ...typeOptions]
 const variationFilters = ['all', 'variation', 'not_variation']
 const filterableFilters = ['all', 'filterable', 'not_filterable']
+
+const getTypeFilterLabel = (type) => {
+  if (type === 'all') {
+    return 'All types'
+  }
+
+  return type.charAt(0).toUpperCase() + type.slice(1)
+}
+
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+const getVariationFilterLabel = (value) => {
+  if (value === 'all') {
+    return 'All variation settings'
+  }
+
+  if (value === 'variation') {
+    return 'Yes'
+  }
+
+  return 'No'
+}
+
+const getFilterableFilterLabel = (value) => {
+  if (value === 'all') {
+    return 'All filterable settings'
+  }
+
+  if (value === 'filterable') {
+    return 'Yes'
+  }
+
+  return 'No'
+}
 
 const defaultValueItem = () => ({
   label: '',
@@ -443,11 +485,12 @@ function Attributes() {
 
   return (
     <AdminPage
+      headerMode="hidden"
       title="Product Attributes"
       description="Manage product attributes such as size, color, material, and variation options."
     >
 
-      <ModuleCard title="Create Attribute" className="attribute-create-card">
+      <ModuleCard title="Create Attribute" className="attribute-create-card dark:border-slate-800">
         <form onSubmit={handleCreate}>
           <ModuleFormGrid columns={2}>
             <AdminField label="Name" required>
@@ -610,86 +653,94 @@ function Attributes() {
         </form>
       </ModuleCard>
 
-      <ModuleToolbar className="admin-toolbar">
-        <form className="products-search-form" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            className={`${adminInputClass} products-search-input`}
-            placeholder="Search attributes..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm" className={adminPrimaryButtonClass}>
-            Search
-          </Button>
-        </form>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search attributes..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-        <AdminSelect
-          className="products-filter-select"
-          value={typeFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setTypeFilter(event.target.value)
-          }}
-        >
-          {typeFilters.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </AdminSelect>
+        <AdminFilterField label="Type">
+          <AdminSelect
+            value={typeFilter}
+            aria-label="Filter by attribute type"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setTypeFilter(event.target.value)
+            }}
+          >
+            {typeFilters.map((type) => (
+              <option key={type} value={type}>
+                {getTypeFilterLabel(type)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <AdminSelect
-          className="products-filter-select"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </AdminSelect>
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <AdminSelect
-          className="products-filter-select"
-          value={variationFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setVariationFilter(event.target.value)
-          }}
-        >
-          {variationFilters.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </AdminSelect>
+        <AdminFilterField label="Variation">
+          <AdminSelect
+            value={variationFilter}
+            aria-label="Filter by variation setting"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setVariationFilter(event.target.value)
+            }}
+          >
+            {variationFilters.map((value) => (
+              <option key={value} value={value}>
+                {getVariationFilterLabel(value)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
 
-        <AdminSelect
-          className="products-filter-select"
-          value={filterableFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setFilterableFilter(event.target.value)
-          }}
-        >
-          {filterableFilters.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </AdminSelect>
-      </ModuleToolbar>
+        <AdminFilterField label="Filterable">
+          <AdminSelect
+            value={filterableFilter}
+            aria-label="Filter by filterable setting"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setFilterableFilter(event.target.value)
+            }}
+          >
+            {filterableFilters.map((value) => (
+              <option key={value} value={value}>
+                {getFilterableFilterLabel(value)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-      {loading ? (
-        <ModuleCard>
-          <p className={adminHelperTextClass}>Loading attributes...</p>
-        </ModuleCard>
-      ) : null}
+      {loading ? <PageLoading message="Loading attributes..." /> : null}
 
       {error ? (
         <AdminAlert type="error" title="Request failed">

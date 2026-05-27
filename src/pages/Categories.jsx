@@ -17,6 +17,7 @@ import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
+import PageLoading from '@/components/admin-ui/PageLoading'
 
 const defaultForm = {
   name: '',
@@ -63,10 +64,7 @@ function Categories() {
 
     try {
       const response = await getCategories()
-      console.log('Categories list response:', response)
-      console.log('Categories response data:', response?.data)
       const list = extractList(response, ['categories'])
-      console.log('First category item:', list[0])
       setCategories(list)
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load categories.')
@@ -211,6 +209,7 @@ function Categories() {
 
   return (
     <AdminPage
+      headerMode="hidden"
       title="Categories"
       description="Manage product categories used to organize your catalog."
     >
@@ -263,9 +262,7 @@ function Categories() {
       </ModuleCard>
 
       {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading categories...</p>
-        </ModuleCard>
+        <PageLoading message="Loading categories..." />
       ) : categories.length === 0 ? (
         <ModuleEmptyState
           title="No categories found"

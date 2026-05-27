@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getActivityLogById, getActivityLogs } from '../api/activityLogApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import Pagination from '../components/ui/Pagination'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-
+import PageLoading from '@/components/admin-ui/PageLoading'
 const moduleOptions = [
   'all',
   'AUTH',
@@ -27,6 +31,14 @@ const moduleOptions = [
   'RETURN',
   'SETTING',
 ]
+
+const getModuleFilterLabel = (module) => {
+  if (module === 'all') {
+    return 'All modules'
+  }
+
+  return module
+}
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -178,6 +190,8 @@ function ActivityLogs() {
     loadLogs()
   }, [currentPage, searchQuery, moduleFilter, actionFilter])
 
+  const hasDateFilter = Boolean(dateFrom || dateTo)
+
   const filteredLogs = useMemo(
     () => logs.filter((log) => isWithinDateRange(log?.createdAt, dateFrom, dateTo)),
     [logs, dateFrom, dateTo],
@@ -230,15 +244,17 @@ function ActivityLogs() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Activity Logs"
-        description="Review admin actions, system changes, and audit history."
-      />
-
-      <ModuleCard>
-        <ModuleToolbar>
-          <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
+    <AdminPage
+      headerMode="hidden"
+      title="Activity Logs"
+      description="Review admin actions, system changes, and audit history."
+    >
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
             <Input
               type="text"
               placeholder="Search logs..."
@@ -249,10 +265,12 @@ function ActivityLogs() {
               Search
             </Button>
           </form>
+        </AdminFilterField>
 
-          <select
-            className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+        <AdminFilterField label="Module" className="sm:w-[160px]">
+          <AdminSelect
             value={moduleFilter}
+            aria-label="Filter by module"
             onChange={(event) => {
               setCurrentPage(1)
               setModuleFilter(event.target.value)
@@ -260,11 +278,13 @@ function ActivityLogs() {
           >
             {moduleOptions.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {getModuleFilterLabel(item)}
               </option>
             ))}
-          </select>
+          </AdminSelect>
+        </AdminFilterField>
 
+        <AdminFilterField label="Action">
           <Input
             type="text"
             placeholder="Action filter..."
@@ -274,139 +294,197 @@ function ActivityLogs() {
               setActionFilter(event.target.value)
             }}
           />
+        </AdminFilterField>
 
+        <AdminFilterField label="Date From" className="sm:w-[160px]">
           <Input
             type="date"
             value={dateFrom}
             onChange={(event) => setDateFrom(event.target.value)}
           />
+        </AdminFilterField>
+
+        <AdminFilterField label="Date To" className="sm:w-[160px]">
           <Input
             type="date"
             value={dateTo}
             onChange={(event) => setDateTo(event.target.value)}
           />
-        </ModuleToolbar>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-        {loading ? (
-          <ModuleCard>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Loading activity logs...</p>
-          </ModuleCard>
-        ) : null}
+      {hasDateFilter ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Date filters apply to the current page of loaded logs.
+        </p>
+      ) : null}
 
-        {error ? (
-          <ModuleCard className="mb-3 border-red-200 bg-red-50 dark:border-red-900/70 dark:bg-red-950/30">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-          </ModuleCard>
-        ) : null}
+      {loading ? <PageLoading message="Loading activity logs..." /> : null}
 
-        {!loading && !error ? (
-          filteredLogs.length === 0 ? (
+      {error ? (
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
+      ) : null}
+
+      {!loading && !error ? (
+        filteredLogs.length === 0 ? (
+          <>
             <ModuleEmptyState
-              title="No activity logs found"
-              description="Try changing filters or search terms."
+              title={
+                logs.length > 0 && hasDateFilter
+                  ? 'No logs on this page match the selected date range.'
+                  : 'No activity logs found'
+              }
+              description={
+                logs.length > 0 && hasDateFilter
+                  ? 'Try another page or adjust the date range.'
+                  : 'Try changing filters or search terms.'
+              }
             />
-          ) : (
-            <>
-              <ModuleTable
-                columns={columns}
-                data={filteredLogs}
-                emptyMessage="No activity logs found."
-                renderRow={(log, index) => {
-                  const id = log?._id || log?.id || `log-${index}`
-                  const entityType = log?.entityType || ''
-                  const entityId = log?.entityId || ''
-                  const entityText =
-                    entityType && entityId
-                      ? `${entityType} (${entityId})`
-                      : entityType || entityId || '-'
-
-                  return (
-                    <tr key={id} className="text-slate-700 dark:text-slate-300">
-                      <td className="text-slate-600 dark:text-slate-400">{formatDateTime(log?.createdAt)}</td>
-                      <td className="font-medium text-slate-800 dark:text-slate-100">{getAdminName(log)}</td>
-                      <td>
-                        <ModuleStatusBadge status={String(log?.module || '').toLowerCase()} />
-                      </td>
-                      <td>{getReadableAction(log?.action)}</td>
-                      <td className="text-slate-600 dark:text-slate-400">{log?.description || '-'}</td>
-                      <td className="text-slate-600 dark:text-slate-400">{entityText}</td>
-                      <td className="text-slate-600 dark:text-slate-400">{log?.ipAddress || '-'}</td>
-                      <td>
-                        <ModuleActions>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => openDetails(log)}>
-                            View Details
-                          </Button>
-                        </ModuleActions>
-                      </td>
-                    </tr>
-                  )
-                }}
-              />
-
-              <div className="[&_.pagination-btn]:dark:border-slate-700 [&_.pagination-btn]:dark:bg-slate-900 [&_.pagination-btn]:dark:text-slate-200 [&_.pagination-btn:disabled]:dark:text-slate-500 [&_.pagination-text]:dark:text-slate-400">
-                <Pagination
+            {logs.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {hasDateFilter ? (
+                  <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                    Pagination reflects all server results for the current filters; date
+                    range only narrows rows on this page.
+                  </p>
+                ) : null}
+                <AdminPagination
                   currentPage={pagination.currentPage}
                   totalPages={pagination.totalPages}
                   onPrevious={goPrev}
                   onNext={goNext}
+                  isPreviousDisabled={pagination.currentPage <= 1}
+                  isNextDisabled={pagination.currentPage >= pagination.totalPages}
                 />
               </div>
-            </>
-          )
-        ) : null}
-      </ModuleCard>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <ModuleTable
+              columns={columns}
+              data={filteredLogs}
+              emptyMessage="No activity logs found."
+              renderRow={(log, index) => {
+                const id = log?._id || log?.id || `log-${index}`
+                const entityType = log?.entityType || ''
+                const entityId = log?.entityId || ''
+                const entityText =
+                  entityType && entityId
+                    ? `${entityType} (${entityId})`
+                    : entityType || entityId || '-'
+
+                return (
+                  <tr key={id} className="text-slate-700 dark:text-slate-300">
+                    <td className="text-slate-600 dark:text-slate-400">{formatDateTime(log?.createdAt)}</td>
+                    <td className="font-medium text-slate-800 dark:text-slate-100">{getAdminName(log)}</td>
+                    <td>
+                      <ModuleStatusBadge status={String(log?.module || '').toLowerCase()} />
+                    </td>
+                    <td>{getReadableAction(log?.action)}</td>
+                    <td className="text-slate-600 dark:text-slate-400">{log?.description || '-'}</td>
+                    <td className="text-slate-600 dark:text-slate-400">{entityText}</td>
+                    <td className="text-slate-600 dark:text-slate-400">{log?.ipAddress || '-'}</td>
+                    <td>
+                      <ModuleActions>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => openDetails(log)}>
+                          View Details
+                        </Button>
+                      </ModuleActions>
+                    </td>
+                  </tr>
+                )
+              }}
+            />
+
+            <div className="flex flex-col gap-2">
+              {hasDateFilter ? (
+                <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                  Pagination reflects all server results for the current filters; date
+                  range only narrows rows on this page.
+                </p>
+              ) : null}
+              <AdminPagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPrevious={goPrev}
+                onNext={goNext}
+                isPreviousDisabled={pagination.currentPage <= 1}
+                isNextDisabled={pagination.currentPage >= pagination.totalPages}
+              />
+            </div>
+          </>
+        )
+      ) : null}
 
       {viewingId ? (
         <div className="log-details-overlay" onClick={closeDetails}>
-          <div className="log-details-modal admin-card dark:border dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="log-details-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="log-details-header">
-              <h3 className="admin-card-title dark:text-slate-100">Activity Log Details</h3>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                Activity Log Details
+              </h3>
               <Button type="button" size="sm" variant="ghost" onClick={closeDetails}>
                 Close
               </Button>
             </div>
 
-            {detailsLoading ? <p className="status-text dark:text-slate-300">Loading details...</p> : null}
-            {detailsError ? <p className="status-text dark:text-red-300">{detailsError}</p> : null}
+            {detailsLoading ? (
+              <AdminAlert type="info" title="Loading" className="mb-3">
+                Loading details...
+              </AdminAlert>
+            ) : null}
+
+            {detailsError ? (
+              <AdminAlert type="error" title="Request failed" className="mb-3">
+                {detailsError}
+              </AdminAlert>
+            ) : null}
 
             {viewingLog ? (
               <div className="log-details-grid">
-                <p>
+                <p className="log-details-field">
                   <strong>Action:</strong> {viewingLog?.action || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>Module:</strong> {viewingLog?.module || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>Description:</strong> {viewingLog?.description || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>Entity ID:</strong> {viewingLog?.entityId || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>Entity Type:</strong> {viewingLog?.entityType || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>User Agent:</strong> {viewingLog?.userAgent || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>IP Address:</strong> {viewingLog?.ipAddress || '-'}
                 </p>
-                <p>
+                <p className="log-details-field">
                   <strong>Created At:</strong> {formatDateTime(viewingLog?.createdAt)}
                 </p>
                 <div className="field-group field-group-full">
-                  <label className="field-label">Metadata JSON</label>
-                  <pre className="log-metadata-block dark:bg-slate-950 dark:text-slate-200">
-                    {JSON.stringify(viewingLog?.metadata || {}, null, 2)}
-                  </pre>
+                  <AdminField label="Metadata JSON">
+                    <pre className="log-metadata-block dark:bg-slate-950 dark:text-slate-200">
+                      {JSON.stringify(viewingLog?.metadata || {}, null, 2)}
+                    </pre>
+                  </AdminField>
                 </div>
               </div>
             ) : null}
           </div>
         </div>
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

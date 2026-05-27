@@ -17,10 +17,16 @@ function ModuleCard({
         ? "bg-transparent shadow-none dark:shadow-none"
         : "bg-white dark:bg-slate-900/80"
 
+  const fillHeight =
+    String(className).includes("h-full") || String(className).includes("dashboard-pair-card")
+
   return (
     <Card
       className={cn(
-        "rounded-xl border border-slate-200/80 shadow-sm dark:border-slate-800/90 dark:shadow-none",
+        "rounded-xl border border-slate-200/80 shadow-sm transition-shadow dark:border-slate-800/90 dark:shadow-none",
+        String(className).includes("product-form-section") &&
+          "shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)] dark:shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]",
+        fillHeight && "flex h-full flex-col",
         toneClass,
         className
       )}
@@ -42,7 +48,14 @@ function ModuleCard({
           </div>
         </CardHeader>
       ) : null}
-      <CardContent className={cn(compact && "p-4 pt-0")}>{children}</CardContent>
+      <CardContent
+        className={cn(
+          compact ? (title || description || actions ? "p-3.5 pt-0" : "p-3.5") : undefined,
+          fillHeight && "flex flex-1 flex-col"
+        )}
+      >
+        {children}
+      </CardContent>
     </Card>
   )
 }

@@ -1,19 +1,38 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { deletePage, getPages } from '../api/pageApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-import Pagination from '../components/ui/Pagination'
-
+import PageLoading from '@/components/admin-ui/PageLoading'
 const pageTypeFilters = ['all', 'page', 'homepage', 'landing', 'policy', 'blog', 'custom']
 const statusFilters = ['all', 'draft', 'published']
+
+const getPageTypeFilterLabel = (type) => {
+  if (type === 'all') {
+    return 'All page types'
+  }
+
+  return type.charAt(0).toUpperCase() + type.slice(1)
+}
+
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -171,20 +190,22 @@ function Pages() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="CMS Pages"
-        description="Manage static pages, SEO content, and reusable page sections."
-        actions={
-          <Link to="/pages/create">
-            <Button size="sm">Create Page</Button>
-          </Link>
-        }
-      />
-
-      <ModuleCard>
-        <ModuleToolbar>
-          <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
+    <AdminPage
+      headerMode="compact"
+      title="CMS Pages"
+      description="Manage static pages, SEO content, and reusable page sections."
+      actions={
+        <Link to="/pages/create">
+          <Button size="sm">Create Page</Button>
+        </Link>
+      }
+    >
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
             <Input
               type="text"
               placeholder="Search pages..."
@@ -195,10 +216,12 @@ function Pages() {
               Search
             </Button>
           </form>
+        </AdminFilterField>
 
-          <select
-            className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+        <AdminFilterField label="Page Type">
+          <AdminSelect
             value={pageTypeFilter}
+            aria-label="Filter by page type"
             onChange={(event) => {
               setCurrentPage(1)
               setPageTypeFilter(event.target.value)
@@ -206,14 +229,16 @@ function Pages() {
           >
             {pageTypeFilters.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {getPageTypeFilterLabel(type)}
               </option>
             ))}
-          </select>
+          </AdminSelect>
+        </AdminFilterField>
 
-          <select
-            className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+        <AdminFilterField label="Status">
+          <AdminSelect
             value={statusFilter}
+            aria-label="Filter by status"
             onChange={(event) => {
               setCurrentPage(1)
               setStatusFilter(event.target.value)
@@ -221,89 +246,89 @@ function Pages() {
           >
             {statusFilters.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {getStatusFilterLabel(status)}
               </option>
             ))}
-          </select>
-        </ModuleToolbar>
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
 
-        {loading ? (
-          <ModuleCard>
-            <p className="text-sm text-slate-600">Loading pages...</p>
-          </ModuleCard>
-        ) : null}
+      {loading ? <PageLoading message="Loading pages..." /> : null}
 
-        {error ? (
-          <ModuleCard className="border-red-200 bg-red-50">
-            <p className="text-sm text-red-700">{error}</p>
-          </ModuleCard>
-        ) : null}
+      {error ? (
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
+      ) : null}
 
-        {!loading && !error ? (
-          pages.length === 0 ? (
-            <ModuleEmptyState
-              title="No pages found"
-              description="Try changing filters or create your first CMS page."
-              action={
-                <Link to="/pages/create">
-                  <Button size="sm">Create Page</Button>
-                </Link>
-              }
-            />
-          ) : (
-            <>
-              <ModuleTable
-                columns={columns}
-                data={pages}
-                emptyMessage="No pages found."
-                renderRow={(page, index) => {
-                  const id = page?._id || page?.id || `page-${index}`
-                  const pageStatus = String(page?.status || 'draft').toLowerCase()
-                  const pageType = getTextValue(page?.pageType, 'page')
+      {!loading && !error ? (
+        pages.length === 0 ? (
+          <ModuleEmptyState
+            title="No pages found"
+            description="Try changing filters or create your first CMS page."
+            action={
+              <Link to="/pages/create">
+                <Button size="sm">Create Page</Button>
+              </Link>
+            }
+          />
+        ) : (
+          <>
+            <ModuleTable
+              columns={columns}
+              data={pages}
+              emptyMessage="No pages found."
+              renderRow={(page, index) => {
+                const id = page?._id || page?.id || `page-${index}`
+                const pageStatus = String(page?.status || 'draft').toLowerCase()
+                const pageType = getTextValue(page?.pageType, 'page')
 
-                  return (
-                    <tr key={id}>
-                      <td>{getTextValue(page?.title, 'Untitled')}</td>
-                      <td>{getTextValue(page?.slug)}</td>
-                      <td>{pageType}</td>
-                      <td>
-                        <ModuleStatusBadge status={pageStatus} />
-                      </td>
-                      <td>{getTextValue(page?.seoTitle)}</td>
-                      <td>{formatDate(page?.updatedAt)}</td>
-                      <td>
-                        <ModuleActions>
-                          <Link to={`/pages/edit/${page?._id || page?.id}`}>
-                            <Button size="sm" variant="ghost" disabled={!page?._id && !page?.id}>
-                              Edit
-                            </Button>
-                          </Link>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            disabled={deletingId === (page?._id || page?.id)}
-                            onClick={() => handleDelete(page)}
-                          >
-                            {deletingId === (page?._id || page?.id) ? 'Deleting...' : 'Delete'}
+                return (
+                  <tr key={id} className="text-slate-700 dark:text-slate-300">
+                    <td className="font-medium text-slate-800 dark:text-slate-100">
+                      {getTextValue(page?.title, 'Untitled')}
+                    </td>
+                    <td className="text-slate-600 dark:text-slate-400">{getTextValue(page?.slug)}</td>
+                    <td className="text-slate-600 dark:text-slate-400">{pageType}</td>
+                    <td>
+                      <ModuleStatusBadge status={pageStatus} />
+                    </td>
+                    <td className="text-slate-600 dark:text-slate-400">{getTextValue(page?.seoTitle)}</td>
+                    <td className="text-slate-600 dark:text-slate-400">{formatDate(page?.updatedAt)}</td>
+                    <td>
+                      <ModuleActions>
+                        <Link to={`/pages/edit/${page?._id || page?.id}`}>
+                          <Button size="sm" variant="ghost" disabled={!page?._id && !page?.id}>
+                            Edit
                           </Button>
-                        </ModuleActions>
-                      </td>
-                    </tr>
-                  )
-                }}
-              />
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={deletingId === (page?._id || page?.id)}
+                          onClick={() => handleDelete(page)}
+                        >
+                          {deletingId === (page?._id || page?.id) ? 'Deleting...' : 'Delete'}
+                        </Button>
+                      </ModuleActions>
+                    </td>
+                  </tr>
+                )
+              }}
+            />
 
-              <Pagination
-                currentPage={pagination.currentPage}
-                totalPages={pagination.totalPages}
-                onPrevious={goPrev}
-                onNext={goNext}
-              />
-            </>
-          )
-        ) : null}
-      </ModuleCard>
-    </section>
+            <AdminPagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPrevious={goPrev}
+              onNext={goNext}
+              isPreviousDisabled={pagination.currentPage <= 1}
+              isNextDisabled={pagination.currentPage >= pagination.totalPages}
+            />
+          </>
+        )
+      ) : null}
+    </AdminPage>
   )
 }
 

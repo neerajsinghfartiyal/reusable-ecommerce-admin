@@ -9,9 +9,9 @@ function AdminShell({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-100/60 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 shrink-0 border-r border-slate-200/70 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950 md:block">
+        <aside className="hidden w-72 shrink-0 border-r border-slate-200/60 bg-white/95 dark:border-slate-800/80 dark:bg-slate-950 md:block">
           <AppSidebar />
         </aside>
 
@@ -21,9 +21,9 @@ function AdminShell({ children }) {
           </SheetContent>
         </Sheet>
 
-        <div className="flex min-w-0 flex-1 flex-col bg-transparent">
+        <div className="flex min-w-0 flex-1 flex-col bg-slate-50/30 dark:bg-transparent">
           <AppTopbar onOpenSidebar={() => setMobileOpen(true)} />
-          <main className="flex-1 p-4 md:p-6 lg:p-8">
+          <main className="flex-1 px-4 py-5 md:px-6 md:py-6">
             <div className="mx-auto w-full max-w-[1400px]">{children || <Outlet />}</div>
           </main>
         </div>

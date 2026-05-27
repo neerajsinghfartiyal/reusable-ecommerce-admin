@@ -1,21 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   deleteMedia,
   getMedia,
+  getMediaUsage,
   updateMedia,
   uploadMedia,
 } from '../api/mediaApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-import Pagination from '../components/ui/Pagination'
-
+import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
+import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
+import PageLoading from '@/components/admin-ui/PageLoading'
 const typeFilters = ['all', 'image', 'video', 'document', 'other']
+
+const getTypeFilterLabel = (type) => {
+  if (type === 'all') {
+    return 'All types'
+  }
+
+  return type.charAt(0).toUpperCase() + type.slice(1)
+}
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -74,6 +90,36 @@ const getImageUrl = (fileUrl) => {
 
 const formatFileSizeKb = (size) => `${(getNumberValue(size, 0) / 1024).toFixed(2)} KB`
 
+const getUsageFieldLabel = (field, position) => {
+  if (field === 'featuredImage') return 'Featured image'
+  if (field === 'galleryImages') {
+    const slot =
+      typeof position === 'number' && Number.isFinite(position) ? position + 1 : null
+    return slot ? `Gallery image (slot ${slot})` : 'Gallery image'
+  }
+  return field || 'Image'
+}
+
+const extractUsagePayload = (response) =>
+  response?.data?.data || response?.data || {}
+
+const formatUsageReferenceLabel = (count) => {
+  const total = getNumberValue(count)
+  if (total <= 0) return 'Unused'
+  return total === 1 ? '1 reference' : `${total} references`
+}
+
+const isMediaUsed = (item, usageCountOverride) => {
+  const count =
+    usageCountOverride !== undefined
+      ? getNumberValue(usageCountOverride)
+      : getNumberValue(item?.usageCount)
+  if (typeof item?.isUsed === 'boolean') {
+    return item.isUsed
+  }
+  return count > 0
+}
+
 function MediaLibrary() {
   const location = useLocation()
   const [mediaItems, setMediaItems] = useState([])
@@ -111,12 +157,23 @@ function MediaLibrary() {
   })
   const [imageLoadErrors, setImageLoadErrors] = useState({})
   const [copyUrlMessage, setCopyUrlMessage] = useState('')
+  const [usageState, setUsageState] = useState({
+    loading: false,
+    error: '',
+    usageCount: 0,
+    usages: [],
+  })
+  const [deleteBlocked, setDeleteBlocked] = useState({
+    message: '',
+    usageCount: 0,
+    usages: [],
+  })
 
   const loadMedia = async () => {
     setLoading(true)
     setError('')
     try {
-      const params = { page: currentPage }
+      const params = { page: currentPage, includeUsage: true }
       if (searchQuery) params.search = searchQuery
       if (folderFilter !== 'all') params.folder = folderFilter
       if (typeFilter !== 'all') params.type = typeFilter
@@ -184,6 +241,55 @@ function MediaLibrary() {
     }
   }, [mediaItems, isDetailsOpen, selectedMediaId])
 
+  useEffect(() => {
+    if (!isDetailsOpen || !selectedMediaId) {
+      setUsageState({
+        loading: false,
+        error: '',
+        usageCount: 0,
+        usages: [],
+      })
+      return undefined
+    }
+
+    let cancelled = false
+
+    const loadUsage = async () => {
+      setUsageState((prev) => ({
+        ...prev,
+        loading: true,
+        error: '',
+      }))
+
+      try {
+        const response = await getMediaUsage(selectedMediaId)
+        const data = extractUsagePayload(response)
+        if (cancelled) return
+
+        setUsageState({
+          loading: false,
+          error: '',
+          usageCount: getNumberValue(data?.usageCount, data?.usages?.length),
+          usages: Array.isArray(data?.usages) ? data.usages : [],
+        })
+      } catch (err) {
+        if (cancelled) return
+        setUsageState({
+          loading: false,
+          error: err?.response?.data?.message || 'Failed to load media usage.',
+          usageCount: 0,
+          usages: [],
+        })
+      }
+    }
+
+    loadUsage()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isDetailsOpen, selectedMediaId])
+
   const folderOptions = useMemo(() => {
     const values = new Set(['general'])
     mediaItems.forEach((item) => {
@@ -237,6 +343,7 @@ function MediaLibrary() {
 
   const openDetails = (item) => {
     const mediaId = item?._id || item?.id || ''
+    setDeleteBlocked({ message: '', usageCount: 0, usages: [] })
     setSelectedMediaId(mediaId)
     setIsDetailsOpen(true)
     setEditForm({
@@ -252,6 +359,13 @@ function MediaLibrary() {
 
   const closeDetails = () => {
     setIsDetailsOpen(false)
+    setDeleteBlocked({ message: '', usageCount: 0, usages: [] })
+    setUsageState({
+      loading: false,
+      error: '',
+      usageCount: 0,
+      usages: [],
+    })
     setCopyUrlMessage('')
     setEditForm({
       title: '',
@@ -263,9 +377,26 @@ function MediaLibrary() {
 
   const handleSaveEdit = async (id) => {
     if (!id) return
+
+    const deactivatingWhileUsed =
+      selectedMediaInUse && editForm.isActive === false
+
+    if (deactivatingWhileUsed) {
+      setDeleteBlocked({
+        message:
+          'This media is used by products and cannot be deactivated.',
+        usageCount: usageState.usageCount,
+        usages: usageState.usages,
+      })
+      setError('')
+      setSuccessMessage('')
+      return
+    }
+
     setSaving(true)
     setError('')
     setSuccessMessage('')
+    setDeleteBlocked({ message: '', usageCount: 0, usages: [] })
     try {
       await updateMedia(id, {
         title: editForm.title.trim(),
@@ -277,7 +408,21 @@ function MediaLibrary() {
       closeDetails()
       await loadMedia()
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to update media.')
+      if (err?.response?.status === 409) {
+        const payload = err?.response?.data?.data || {}
+        const usages = Array.isArray(payload?.usages) ? payload.usages : []
+        setDeleteBlocked({
+          message:
+            err?.response?.data?.message ||
+            'This media is used by products and cannot be deactivated.',
+          usageCount: getNumberValue(payload?.usageCount, usages.length),
+          usages,
+        })
+        setError('')
+      } else {
+        setDeleteBlocked({ message: '', usageCount: 0, usages: [] })
+        setError(err?.response?.data?.message || 'Failed to update media.')
+      }
     } finally {
       setSaving(false)
     }
@@ -286,6 +431,29 @@ function MediaLibrary() {
   const handleDelete = async (item) => {
     const id = item?._id || item?.id
     if (!id) return
+
+    const inUse =
+      selectedMediaId === id && usageState.usageCount > 0
+        ? true
+        : isMediaUsed(item)
+
+    if (inUse) {
+      const count =
+        selectedMediaId === id ? usageState.usageCount : getNumberValue(item?.usageCount)
+      setDeleteBlocked({
+        message:
+          'This media is used by products and cannot be deleted until it is removed or replaced.',
+        usageCount: count,
+        usages:
+          selectedMediaId === id && usageState.usages.length
+            ? usageState.usages
+            : [],
+      })
+      setError('')
+      setSuccessMessage('')
+      return
+    }
+
     const ok = window.confirm(
       `Delete "${item?.originalName || item?.fileName || 'this file'}"?`,
     )
@@ -294,13 +462,28 @@ function MediaLibrary() {
     setDeletingId(id)
     setError('')
     setSuccessMessage('')
+    setDeleteBlocked({ message: '', usageCount: 0, usages: [] })
     try {
       await deleteMedia(id)
       setSuccessMessage('Media deleted successfully.')
       if (selectedMediaId === id) closeDetails()
       await loadMedia()
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to delete media.')
+      if (err?.response?.status === 409) {
+        const payload = err?.response?.data?.data || {}
+        const usages = Array.isArray(payload?.usages) ? payload.usages : []
+        setDeleteBlocked({
+          message:
+            err?.response?.data?.message ||
+            'Media is currently used and cannot be deleted.',
+          usageCount: getNumberValue(payload?.usageCount, usages.length),
+          usages,
+        })
+        setError('')
+      } else {
+        setDeleteBlocked({ message: '', usageCount: 0, usages: [] })
+        setError(err?.response?.data?.message || 'Failed to delete media.')
+      }
     } finally {
       setDeletingId('')
     }
@@ -352,14 +535,14 @@ function MediaLibrary() {
   const selectedMediaFileUrl = selectedMedia?.fileUrl || selectedMedia?.filePath || ''
   const selectedMediaName =
     selectedMedia?.originalName || selectedMedia?.fileName || 'Untitled file'
+  const selectedMediaInUse = isMediaUsed(selectedMedia, usageState.usageCount)
 
   return (
-    <section>
-      <ModuleHeader
-        title="Media Library"
-        description="Upload, browse, and manage media files used across the store."
-      />
-
+    <AdminPage
+      headerMode="hidden"
+      title="Media Library"
+      description="Upload, browse, and manage media files used across the store."
+    >
       <ModuleCard
         title="Media Upload"
         actions={
@@ -372,12 +555,10 @@ function MediaLibrary() {
           </Button>
         }
       >
-
         {showUploadForm ? (
           <form onSubmit={handleUpload}>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">File</label>
+            <ModuleFormGrid columns={2}>
+              <AdminField label="File" required>
                 <Input
                   id="media-upload-input"
                   type="file"
@@ -388,9 +569,9 @@ function MediaLibrary() {
                     }))
                   }
                 />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Folder</label>
+              </AdminField>
+
+              <AdminField label="Folder">
                 <Input
                   type="text"
                   value={uploadForm.folder}
@@ -398,9 +579,9 @@ function MediaLibrary() {
                     setUploadForm((prev) => ({ ...prev, folder: event.target.value }))
                   }
                 />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Title</label>
+              </AdminField>
+
+              <AdminField label="Title">
                 <Input
                   type="text"
                   value={uploadForm.title}
@@ -408,9 +589,9 @@ function MediaLibrary() {
                     setUploadForm((prev) => ({ ...prev, title: event.target.value }))
                   }
                 />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Alt Text</label>
+              </AdminField>
+
+              <AdminField label="Alt Text">
                 <Input
                   type="text"
                   value={uploadForm.altText}
@@ -418,8 +599,9 @@ function MediaLibrary() {
                     setUploadForm((prev) => ({ ...prev, altText: event.target.value }))
                   }
                 />
-              </div>
-            </div>
+              </AdminField>
+            </ModuleFormGrid>
+
             <ModuleActions className="mt-4 justify-end">
               <Button type="submit" size="sm" disabled={uploading}>
                 {uploading ? 'Uploading...' : 'Upload Media'}
@@ -429,65 +611,108 @@ function MediaLibrary() {
         ) : null}
       </ModuleCard>
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search media by name, title, alt text..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={folderFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setFolderFilter(event.target.value)
-          }}
-        >
-          <option value="all">all folders</option>
-          {folderOptions.map((folder) => (
-            <option key={folder} value={folder}>
-              {folder}
-            </option>
-          ))}
-        </select>
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={typeFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setTypeFilter(event.target.value)
-          }}
-        >
-          {typeFilters.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search media by name, title, alt text..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading media...</p>
-        </ModuleCard>
-      ) : null}
+        <AdminFilterField label="Folder">
+          <AdminSelect
+            value={folderFilter}
+            aria-label="Filter by folder"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setFolderFilter(event.target.value)
+            }}
+          >
+            <option value="all">All folders</option>
+            {folderOptions.map((folder) => (
+              <option key={folder} value={folder}>
+                {folder}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+
+        <AdminFilterField label="Type" className="sm:w-[160px]">
+          <AdminSelect
+            value={typeFilter}
+            aria-label="Filter by media type"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setTypeFilter(event.target.value)
+            }}
+          >
+            {typeFilters.map((type) => (
+              <option key={type} value={type}>
+                {getTypeFilterLabel(type)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
+
+      {loading ? <PageLoading message="Loading media files..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
+      ) : null}
+
+      {deleteBlocked.message ? (
+        <AdminAlert type="error" title="Action blocked">
+          <p className="text-sm">{deleteBlocked.message}</p>
+          {deleteBlocked.usageCount > 0 ? (
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+              Used in {formatUsageReferenceLabel(deleteBlocked.usageCount)} on products.
+            </p>
+          ) : null}
+          {deleteBlocked.usages.length > 0 ? (
+            <ul className="mt-3 max-h-36 space-y-2 overflow-y-auto">
+              {deleteBlocked.usages.map((usage) => (
+                <li
+                  key={`${usage.entityType}-${usage.entityId}-${usage.field}-${usage.position ?? ''}`}
+                  className="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/60"
+                >
+                  <span className="font-medium text-slate-950 dark:text-slate-50">
+                    {usage.entityLabel || 'Unnamed product'}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-400">
+                    {getUsageFieldLabel(usage.field, usage.position)}
+                  </span>
+                  {usage.editUrl ? (
+                    <Link
+                      to={usage.editUrl}
+                      className="mt-1 inline-block text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Edit product
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50">
-          <p className="text-sm text-blue-700">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
@@ -507,6 +732,8 @@ function MediaLibrary() {
                 const displayName = item?.originalName || item?.fileName || 'Media'
                 const isSelected = selectedMediaId === id
                 const showImage = isImage && fileUrl && !imageLoadErrors[id]
+                const usageCount = getNumberValue(item?.usageCount)
+                const isUsed = isMediaUsed(item)
 
                 return (
                   <div
@@ -514,9 +741,24 @@ function MediaLibrary() {
                     key={id}
                     title={displayName}
                   >
+                    <span
+                      className={`absolute left-2 top-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        isUsed
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/70 dark:text-amber-100'
+                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      {isUsed
+                        ? `Used${
+                            usageCount > 0
+                              ? ` · ${formatUsageReferenceLabel(usageCount)}`
+                              : ''
+                          }`
+                        : 'Unused'}
+                    </span>
                     <button
                       type="button"
-                      className="h-full w-full"
+                      className="media-thumb-button block h-full w-full cursor-pointer"
                       onClick={() => openDetails(item)}
                     >
                       {showImage ? (
@@ -547,7 +789,12 @@ function MediaLibrary() {
                         size="sm"
                         variant="destructive"
                         className="h-7 px-2 text-xs"
-                        disabled={deletingId === id}
+                        disabled={deletingId === id || isUsed}
+                        title={
+                          isUsed
+                            ? 'This media is used by products and cannot be deleted.'
+                            : 'Delete media'
+                        }
                         onClick={() => handleDelete(item)}
                       >
                         {deletingId === id ? '...' : 'Delete'}
@@ -562,12 +809,14 @@ function MediaLibrary() {
           {isDetailsOpen && selectedMedia ? (
             <div className="media-modal-overlay" onClick={closeDetails}>
               <div
-                className="media-modal admin-card"
+                className="media-modal admin-card dark:border dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="media-modal-header">
-                  <h2 className="setup-title">Attachment Details</h2>
-                  <Button type="button" size="sm" onClick={closeDetails}>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    Attachment Details
+                  </h2>
+                  <Button type="button" size="sm" variant="ghost" onClick={closeDetails}>
                     Close
                   </Button>
                 </div>
@@ -588,9 +837,13 @@ function MediaLibrary() {
                 </div>
 
                 <div className="media-modal-meta">
-                  <p className="media-meta"><strong>File:</strong> {selectedMediaName}</p>
-                  <p className="media-meta">
-                    <strong>URL:</strong> {selectedMediaFileUrl || '-'}
+                  <p className="media-meta text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">File:</strong>{' '}
+                    {selectedMediaName}
+                  </p>
+                  <p className="media-meta text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">URL:</strong>{' '}
+                    {selectedMediaFileUrl || '-'}
                   </p>
                   <div className="media-copy-row">
                     <Button
@@ -602,76 +855,158 @@ function MediaLibrary() {
                       Copy URL
                     </Button>
                     {copyUrlMessage ? (
-                      <span className="media-copy-text">{copyUrlMessage}</span>
+                      <span className="media-copy-text text-slate-600 dark:text-slate-400">
+                        {copyUrlMessage}
+                      </span>
                     ) : null}
                   </div>
-                  <p className="media-meta">
-                    <strong>Folder:</strong> {selectedMedia?.folder || 'general'}
+                  <p className="media-meta text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">Folder:</strong>{' '}
+                    {selectedMedia?.folder || 'general'}
                   </p>
-                  <p className="media-meta">
-                    <strong>Type:</strong> {selectedMedia?.type || selectedMedia?.mimeType || 'other'}
+                  <p className="media-meta text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">Type:</strong>{' '}
+                    {selectedMedia?.type || selectedMedia?.mimeType || 'other'}
                   </p>
-                  <p className="media-meta">
-                    <strong>Size:</strong> {formatFileSizeKb(selectedMedia?.size)}
+                  <p className="media-meta text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">Size:</strong>{' '}
+                    {formatFileSizeKb(selectedMedia?.size)}
                   </p>
-                  <p className="media-meta">
-                    <strong>Status:</strong>{' '}
-                    <span className={`status-badge media-${selectedMediaStatus}`}>
-                      {selectedMediaStatus}
-                    </span>
+                  <p className="media-meta flex flex-wrap items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">Status:</strong>
+                    <ModuleStatusBadge status={selectedMediaStatus} />
                   </p>
-                  <p className="media-meta">
-                    <strong>Created:</strong>{' '}
+                  <p className="media-meta text-slate-700 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-slate-100">Created:</strong>{' '}
                     {selectedMedia?.createdAt
                       ? new Date(selectedMedia.createdAt).toLocaleString()
                       : '-'}
                   </p>
                 </div>
 
+                <div className="rounded-lg border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-950 dark:text-slate-50">
+                      Product usage
+                    </h3>
+                    {usageState.loading ? (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Loading...
+                      </span>
+                    ) : usageState.usageCount > 0 ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">
+                        Used · {formatUsageReferenceLabel(usageState.usageCount)}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                        Unused
+                      </span>
+                    )}
+                  </div>
+
+                  {usageState.error ? (
+                    <p className="text-sm text-rose-600 dark:text-rose-400">{usageState.error}</p>
+                  ) : null}
+
+                  {!usageState.loading && !usageState.error && usageState.usageCount > 0 ? (
+                    <ul className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                      {usageState.usages.map((usage) => {
+                        const usageKey = `${usage.entityType}-${usage.entityId}-${usage.field}-${usage.position ?? ''}`
+                        return (
+                          <li
+                            key={usageKey}
+                            className="flex flex-col gap-1 rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/80"
+                          >
+                            <span className="font-medium text-slate-950 dark:text-slate-50">
+                              {usage.entityLabel || 'Unnamed product'}
+                            </span>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">
+                              {getUsageFieldLabel(usage.field, usage.position)}
+                            </span>
+                            {usage.editUrl ? (
+                              <Link
+                                to={usage.editUrl}
+                                className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                Edit product
+                              </Link>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : null}
+
+                  {!usageState.loading &&
+                  !usageState.error &&
+                  usageState.usageCount === 0 ? (
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                      Not referenced by any product featured or gallery image.
+                    </p>
+                  ) : null}
+
+                  {usageState.usageCount > 0 ? (
+                    <p className="mt-3 text-xs text-amber-800 dark:text-amber-200/90">
+                      This media is used by products and cannot be deleted until it is
+                      removed or replaced.
+                    </p>
+                  ) : null}
+                </div>
+
                 <div className="media-edit-form">
-                  <div className="field-group">
-                    <label className="field-label">Title</label>
-                    <Input
-                      type="text"
-                      value={editForm.title}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, title: event.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="field-group">
-                    <label className="field-label">Alt Text</label>
-                    <Input
-                      type="text"
-                      value={editForm.altText}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, altText: event.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="field-group">
-                    <label className="field-label">Folder</label>
-                    <Input
-                      type="text"
-                      value={editForm.folder}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, folder: event.target.value }))
-                      }
-                    />
-                  </div>
-                  <label className="setup-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={editForm.isActive}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          isActive: event.target.checked,
-                        }))
-                      }
-                    />
-                    Active
-                  </label>
+                  <ModuleFormGrid columns={1}>
+                    <AdminField label="Title">
+                      <Input
+                        type="text"
+                        value={editForm.title}
+                        onChange={(event) =>
+                          setEditForm((prev) => ({ ...prev, title: event.target.value }))
+                        }
+                      />
+                    </AdminField>
+
+                    <AdminField label="Alt Text">
+                      <Input
+                        type="text"
+                        value={editForm.altText}
+                        onChange={(event) =>
+                          setEditForm((prev) => ({ ...prev, altText: event.target.value }))
+                        }
+                      />
+                    </AdminField>
+
+                    <AdminField label="Folder">
+                      <Input
+                        type="text"
+                        value={editForm.folder}
+                        onChange={(event) =>
+                          setEditForm((prev) => ({ ...prev, folder: event.target.value }))
+                        }
+                      />
+                    </AdminField>
+
+                    <AdminField label="Active">
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <Checkbox
+                          checked={editForm.isActive}
+                          disabled={selectedMediaInUse}
+                          onCheckedChange={(checked) =>
+                            setEditForm((prev) => ({
+                              ...prev,
+                              isActive: checked === true,
+                            }))
+                          }
+                        />
+                        Active
+                      </label>
+                      {selectedMediaInUse ? (
+                        <p className="mt-1 text-xs text-amber-800 dark:text-amber-200/90">
+                          Active status cannot be turned off while this media is used by
+                          products.
+                        </p>
+                      ) : null}
+                    </AdminField>
+                  </ModuleFormGrid>
                 </div>
 
                 <div className="media-actions">
@@ -687,7 +1022,12 @@ function MediaLibrary() {
                     type="button"
                     size="sm"
                     variant="destructive"
-                    disabled={deletingId === selectedMediaId}
+                    disabled={deletingId === selectedMediaId || selectedMediaInUse}
+                    title={
+                      selectedMediaInUse
+                        ? 'This media is used by products and cannot be deleted.'
+                        : 'Delete media'
+                    }
                     onClick={() => handleDelete(selectedMedia)}
                   >
                     {deletingId === selectedMediaId ? 'Deleting...' : 'Delete'}
@@ -700,15 +1040,17 @@ function MediaLibrary() {
             </div>
           ) : null}
 
-          <Pagination
+          <AdminPagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}
             onPrevious={goPrev}
             onNext={goNext}
+            isPreviousDisabled={pagination.currentPage <= 1}
+            isNextDisabled={pagination.currentPage >= pagination.totalPages}
           />
         </>
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 

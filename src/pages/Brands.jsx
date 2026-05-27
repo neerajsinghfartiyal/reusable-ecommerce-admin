@@ -12,6 +12,7 @@ import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
+import PageLoading from '@/components/admin-ui/PageLoading'
 
 const defaultForm = {
   name: '',
@@ -57,10 +58,7 @@ function Brands() {
     setError('')
     try {
       const response = await getBrands()
-      console.log('Brands list response:', response)
-      console.log('Brands response data:', response?.data)
       const list = extractList(response, ['brands'])
-      console.log('First brand item:', list[0])
       setBrands(list)
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load brands.')
@@ -201,6 +199,7 @@ function Brands() {
 
   return (
     <AdminPage
+      headerMode="hidden"
       title="Brands"
       description="Manage product brands used across your catalog."
     >
@@ -253,9 +252,7 @@ function Brands() {
       </ModuleCard>
 
       {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading brands...</p>
-        </ModuleCard>
+        <PageLoading message="Loading brands..." />
       ) : brands.length === 0 ? (
         <ModuleEmptyState
           title="No brands found"

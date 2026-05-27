@@ -6,20 +6,32 @@ import {
   getCoupons,
   updateCoupon,
 } from '../api/couponApi'
+import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
+import AdminFilterField from '@/components/admin-ui/AdminFilterField'
+import AdminField from '@/components/admin-ui/AdminField'
+import AdminPage from '@/components/admin-ui/AdminPage'
+import AdminPagination from '@/components/admin-ui/AdminPagination'
+import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import Pagination from '../components/ui/Pagination'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
-import ModuleHeader from '@/components/admin-ui/ModuleHeader'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
-import ModuleToolbar from '@/components/admin-ui/ModuleToolbar'
-
+import PageLoading from '@/components/admin-ui/PageLoading'
 const statusFilters = ['all', 'active', 'inactive']
+
+const getStatusFilterLabel = (status) => {
+  if (status === 'all') {
+    return 'All statuses'
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
 const discountTypes = ['percentage', 'fixed']
 
 const getNumberValue = (...values) => {
@@ -147,7 +159,6 @@ function Coupons() {
       const paginationData = extractPagination(response)
 
       setCoupons(list)
-      console.log('First coupon item:', list[0])
       setPagination({
         totalItems: getNumberValue(
           paginationData?.totalItems,
@@ -339,28 +350,25 @@ function Coupons() {
   ]
 
   return (
-    <section>
-      <ModuleHeader
-        title="Coupons"
-        description="Manage discount codes, usage limits, and promotional offers."
-      />
-
-      <ModuleCard title="Create Coupon" className="mb-4">
+    <AdminPage
+      headerMode="hidden"
+      title="Coupons"
+      description="Manage discount codes, usage limits, and promotional offers."
+    >
+      <ModuleCard title="Create Coupon">
         <form onSubmit={handleCreate}>
           <ModuleFormGrid columns={2}>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Code</label>
+            <AdminField label="Code" required>
               <Input
                 value={form.code}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, code: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Discount Type</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
+            </AdminField>
+
+            <AdminField label="Type">
+              <AdminSelect
                 value={form.discountType}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, discountType: event.target.value }))
@@ -371,10 +379,10 @@ function Coupons() {
                     {type}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Discount Value</label>
+              </AdminSelect>
+            </AdminField>
+
+            <AdminField label="Value">
               <Input
                 type="number"
                 min="0"
@@ -384,9 +392,9 @@ function Coupons() {
                   setForm((prev) => ({ ...prev, discountValue: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Minimum Order Amount</label>
+            </AdminField>
+
+            <AdminField label="Minimum Order">
               <Input
                 type="number"
                 min="0"
@@ -396,9 +404,9 @@ function Coupons() {
                   setForm((prev) => ({ ...prev, minimumOrderAmount: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Usage Limit</label>
+            </AdminField>
+
+            <AdminField label="Usage Limit">
               <Input
                 type="number"
                 min="0"
@@ -407,9 +415,9 @@ function Coupons() {
                   setForm((prev) => ({ ...prev, usageLimit: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Start Date</label>
+            </AdminField>
+
+            <AdminField label="Starts At">
               <Input
                 type="date"
                 value={form.startDate}
@@ -417,9 +425,9 @@ function Coupons() {
                   setForm((prev) => ({ ...prev, startDate: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">End Date</label>
+            </AdminField>
+
+            <AdminField label="Ends At">
               <Input
                 type="date"
                 value={form.endDate}
@@ -427,66 +435,72 @@ function Coupons() {
                   setForm((prev) => ({ ...prev, endDate: event.target.value }))
                 }
               />
-            </div>
-            <div>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            </AdminField>
+
+            <AdminField label="Active">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <Checkbox checked={form.isActive} onCheckedChange={handleFormCheckChange} />
                 Active
               </label>
-            </div>
+            </AdminField>
+
             <div className="md:col-span-2 flex justify-end">
               <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? 'Creating...' : 'Create Coupon'}
+                {submitting ? 'Creating...' : 'Create Coupon'}
               </Button>
             </div>
           </ModuleFormGrid>
         </form>
       </ModuleCard>
 
-      <ModuleToolbar>
-        <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-center" onSubmit={handleSearchSubmit}>
-          <Input
-            type="text"
-            placeholder="Search coupon code..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
-        <select
-          className="flex h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={statusFilter}
-          onChange={(event) => {
-            setCurrentPage(1)
-            setStatusFilter(event.target.value)
-          }}
-        >
-          {statusFilters.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModuleToolbar>
+      <AdminFilterBar>
+        <AdminFilterField variant="search" label="Search">
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={handleSearchSubmit}
+          >
+            <Input
+              type="text"
+              placeholder="Search coupons..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <Button type="submit" size="sm">
+              Search
+            </Button>
+          </form>
+        </AdminFilterField>
 
-      {loading ? (
-        <ModuleCard>
-          <p className="text-sm text-slate-600">Loading coupons...</p>
-        </ModuleCard>
-      ) : null}
+        <AdminFilterField label="Status">
+          <AdminSelect
+            value={statusFilter}
+            aria-label="Filter by status"
+            onChange={(event) => {
+              setCurrentPage(1)
+              setStatusFilter(event.target.value)
+            }}
+          >
+            {statusFilters.map((status) => (
+              <option key={status} value={status}>
+                {getStatusFilterLabel(status)}
+              </option>
+            ))}
+          </AdminSelect>
+        </AdminFilterField>
+      </AdminFilterBar>
+
+      {loading ? <PageLoading message="Loading coupons..." /> : null}
 
       {error ? (
-        <ModuleCard className="mb-3 border-red-200 bg-red-50">
-          <p className="text-sm text-red-700">{error}</p>
-        </ModuleCard>
+        <AdminAlert type="error" title="Request failed">
+          {error}
+        </AdminAlert>
       ) : null}
 
       {successMessage ? (
-        <ModuleCard className="mb-3 border-blue-200 bg-blue-50">
-          <p className="text-sm text-blue-700">{successMessage}</p>
-        </ModuleCard>
+        <AdminAlert type="success" title="Success">
+          {successMessage}
+        </AdminAlert>
       ) : null}
 
       {!loading && !error ? (
@@ -496,200 +510,201 @@ function Coupons() {
             description="Create your first coupon or try changing filters."
           />
         ) : (
-        <>
-          <ModuleTable
-            columns={columns}
-            data={coupons}
-            emptyMessage="No coupons found."
-            renderRow={(coupon, index) => {
-              const couponId = coupon?._id || coupon?.id || `coupon-${index}`
-              const status = getStatus(coupon)
-              const usageData = getUsageData(coupon)
-              const isEditing = editingId === couponId
-              const isDeleting = deletingId === couponId
-              const startDate = coupon?.startDate
-              const endDate = coupon?.endDate || coupon?.expiryDate
+          <>
+            <ModuleTable
+              columns={columns}
+              data={coupons}
+              emptyMessage="No coupons found."
+              renderRow={(coupon, index) => {
+                const couponId = coupon?._id || coupon?.id || `coupon-${index}`
+                const status = getStatus(coupon)
+                const usageData = getUsageData(coupon)
+                const isEditing = editingId === couponId
+                const isDeleting = deletingId === couponId
+                const startDate = coupon?.startDate
+                const endDate = coupon?.endDate || coupon?.expiryDate
 
-              return (
-                <tr key={couponId}>
-                  <td>
-                    {isEditing ? (
-                      <Input
-                        type="text"
-                        value={editForm.code}
-                        onChange={(event) =>
-                          setEditForm((prev) => ({ ...prev, code: event.target.value }))
-                        }
-                      />
-                    ) : (
-                      coupon?.code || '-'
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <select
-                        className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm"
-                        value={editForm.discountType}
-                        onChange={(event) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            discountType: event.target.value,
-                          }))
-                        }
-                      >
-                        {discountTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      coupon?.discountType || '-'
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={editForm.discountValue}
-                        onChange={(event) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            discountValue: event.target.value,
-                          }))
-                        }
-                      />
-                    ) : (
-                      getDiscountValue(coupon)
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={editForm.minimumOrderAmount}
-                        onChange={(event) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            minimumOrderAmount: event.target.value,
-                          }))
-                        }
-                      />
-                    ) : (
-                      getMinimumOrderAmount(coupon)
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <Input
-                        type="number"
-                        min="0"
-                        value={editForm.usageLimit}
-                        onChange={(event) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            usageLimit: event.target.value,
-                          }))
-                        }
-                      />
-                    ) : (
-                      `${usageData.used} / ${usageData.limit}`
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <div className="grid grid-cols-1 gap-2">
-                        <Input
-                          type="date"
-                          value={editForm.startDate}
-                          onChange={(event) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              startDate: event.target.value,
-                            }))
-                          }
-                        />
-                        <Input
-                          type="date"
-                          value={editForm.endDate}
-                          onChange={(event) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              endDate: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    ) : (
-                      `${formatDate(startDate)} - ${formatDate(endDate)}`
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                        <Checkbox checked={editForm.isActive} onCheckedChange={handleEditCheckChange} />
-                        Active
-                      </label>
-                    ) : (
-                      <ModuleStatusBadge status={status} />
-                    )}
-                  </td>
-                  <td>
-                    <ModuleActions>
+                return (
+                  <tr key={couponId} className="text-slate-700 dark:text-slate-300">
+                    <td className="font-medium text-slate-800 dark:text-slate-100">
                       {isEditing ? (
-                        <>
+                        <Input
+                          type="text"
+                          value={editForm.code}
+                          onChange={(event) =>
+                            setEditForm((prev) => ({ ...prev, code: event.target.value }))
+                          }
+                        />
+                      ) : (
+                        coupon?.code || '-'
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <AdminSelect
+                          value={editForm.discountType}
+                          onChange={(event) =>
+                            setEditForm((prev) => ({
+                              ...prev,
+                              discountType: event.target.value,
+                            }))
+                          }
+                        >
+                          {discountTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </AdminSelect>
+                      ) : (
+                        coupon?.discountType || '-'
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editForm.discountValue}
+                          onChange={(event) =>
+                            setEditForm((prev) => ({
+                              ...prev,
+                              discountValue: event.target.value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        getDiscountValue(coupon)
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editForm.minimumOrderAmount}
+                          onChange={(event) =>
+                            setEditForm((prev) => ({
+                              ...prev,
+                              minimumOrderAmount: event.target.value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        getMinimumOrderAmount(coupon)
+                      )}
+                    </td>
+                    <td className="text-slate-600 dark:text-slate-400">
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          min="0"
+                          value={editForm.usageLimit}
+                          onChange={(event) =>
+                            setEditForm((prev) => ({
+                              ...prev,
+                              usageLimit: event.target.value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        `${usageData.used} / ${usageData.limit}`
+                      )}
+                    </td>
+                    <td className="text-slate-600 dark:text-slate-400">
+                      {isEditing ? (
+                        <div className="grid grid-cols-1 gap-2">
+                          <Input
+                            type="date"
+                            value={editForm.startDate}
+                            onChange={(event) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                startDate: event.target.value,
+                              }))
+                            }
+                          />
+                          <Input
+                            type="date"
+                            value={editForm.endDate}
+                            onChange={(event) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                endDate: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      ) : (
+                        `${formatDate(startDate)} - ${formatDate(endDate)}`
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                          <Checkbox checked={editForm.isActive} onCheckedChange={handleEditCheckChange} />
+                          Active
+                        </label>
+                      ) : (
+                        <ModuleStatusBadge status={status} />
+                      )}
+                    </td>
+                    <td>
+                      <ModuleActions>
+                        {isEditing ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={savingRow}
+                              onClick={handleInlineUpdate}
+                            >
+                              {savingRow ? 'Saving...' : 'Save'}
+                            </Button>
+                            <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
                           <Button
                             type="button"
                             size="sm"
-                            disabled={savingRow}
-                            onClick={handleInlineUpdate}
+                            variant="ghost"
+                            onClick={() => startEdit(coupon)}
                           >
-                            {savingRow ? 'Saving...' : 'Save'}
+                            Edit
                           </Button>
-                          <Button type="button" size="sm" variant="secondary" onClick={cancelEdit}>
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
+                        )}
                         <Button
                           type="button"
                           size="sm"
-                          variant="ghost"
-                          onClick={() => startEdit(coupon)}
+                          variant="destructive"
+                          disabled={isDeleting}
+                          onClick={() => handleDelete(coupon)}
                         >
-                          Edit
+                          {isDeleting ? 'Deleting...' : 'Delete'}
                         </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={isDeleting}
-                        onClick={() => handleDelete(coupon)}
-                      >
-                        {isDeleting ? 'Deleting...' : 'Delete'}
-                      </Button>
-                    </ModuleActions>
-                  </td>
-                </tr>
-              )
-            }}
-          />
+                      </ModuleActions>
+                    </td>
+                  </tr>
+                )
+              }}
+            />
 
-          <Pagination
-            currentPage={pagination.currentPage}
-            totalPages={pagination.totalPages}
-            onPrevious={goPrev}
-            onNext={goNext}
-          />
-        </>
+            <AdminPagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPrevious={goPrev}
+              onNext={goNext}
+              isPreviousDisabled={pagination.currentPage <= 1}
+              isNextDisabled={pagination.currentPage >= pagination.totalPages}
+            />
+          </>
         )
       ) : null}
-    </section>
+    </AdminPage>
   )
 }
 
