@@ -58,6 +58,52 @@ const getDuplicateSnapshot = (duplicateSummary) => [
   { label: 'Needs mapping', value: duplicateSummary?.unresolvedRows ?? 0 },
 ]
 
+const buildImportSettingsFingerprint = ({
+  duplicateStrategy,
+  checkNameDuplicates,
+  autoCreateCatalog,
+  rowMappings,
+  fileName,
+}) =>
+  JSON.stringify({
+    duplicateStrategy,
+    checkNameDuplicates,
+    autoCreateCatalog,
+    rowMappings,
+    fileName: fileName || '',
+  })
+
+const PREVIEW_STATUS_COPY = {
+  'not-previewed': {
+    label: 'Not previewed',
+    detail: 'Upload a file and run validation to generate a preview snapshot.',
+  },
+  'preview-loading': {
+    label: 'Validating file',
+    detail: 'Parsing the import file and building the preview snapshot.',
+  },
+  'preview-stale': {
+    label: 'Preview stale',
+    detail: 'Import settings changed. Re-run preview before importing.',
+  },
+  'preview-ready': {
+    label: 'Preview ready',
+    detail: 'The current preview matches your import settings and has no blocking rows.',
+  },
+  'preview-needs-attention': {
+    label: 'Preview needs attention',
+    detail: 'Resolve validation errors or unresolved mappings, then refresh preview.',
+  },
+  'import-running': {
+    label: 'Import running',
+    detail: 'Committing products from the current file. Do not change settings during import.',
+  },
+  'import-complete': {
+    label: 'Import complete',
+    detail: 'Review the import summary and history below.',
+  },
+}
+
 function ProductImportWizard({
   onImportComplete,
   onDownloadCsv,
@@ -78,6 +124,7 @@ function ProductImportWizard({
   const [importSummary, setImportSummary] = useState(null)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  const [previewFingerprint, setPreviewFingerprint] = useState(null)
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0] || null
@@ -85,7 +132,9 @@ function ProductImportWizard({
     setSelectedFileName(file?.name || '')
     setPreviewError('')
     setPreviewResult(null)
+    setPreviewFingerprint(null)
     setImportSummary(null)
+    setSummaryOpen(false)
     setRowMappings({})
     setStep(1)
   }
@@ -108,6 +157,15 @@ function ProductImportWizard({
       })
       const payload = response?.data?.data || response?.data || null
       setPreviewResult(payload)
+      setPreviewFingerprint(
+        buildImportSettingsFingerprint({
+          duplicateStrategy,
+          checkNameDuplicates,
+          autoCreateCatalog,
+          rowMappings,
+          fileName: selectedFile?.name || selectedFileName,
+        }),
+      )
       return payload
     } catch (err) {
       const message =
@@ -167,7 +225,30 @@ function ProductImportWizard({
     })
   }
 
+  const previewStale = useMemo(() => {
+    if (!previewResult || !previewFingerprint) return false
+    return (
+      previewFingerprint !==
+      buildImportSettingsFingerprint({
+        duplicateStrategy,
+        checkNameDuplicates,
+        autoCreateCatalog,
+        rowMappings,
+        fileName: selectedFileName,
+      })
+    )
+  }, [
+    previewResult,
+    previewFingerprint,
+    duplicateStrategy,
+    checkNameDuplicates,
+    autoCreateCatalog,
+    rowMappings,
+    selectedFileName,
+  ])
+
   const readyToImport = useMemo(() => {
+    if (previewStale) return false
     if (!previewResult?.rows?.length) return false
     const blockingRows = previewResult.rows.filter((row) => {
       if (row.validationState === 'error') return true
@@ -178,7 +259,26 @@ function ProductImportWizard({
       return false
     })
     return blockingRows.length === 0
-  }, [previewResult, duplicateStrategy])
+  }, [previewResult, duplicateStrategy, previewStale])
+
+  const previewStatus = useMemo(() => {
+    if (importLoading) return 'import-running'
+    if (importSummary) return 'import-complete'
+    if (previewLoading) return 'preview-loading'
+    if (!previewResult) return 'not-previewed'
+    if (previewStale) return 'preview-stale'
+    if (readyToImport) return 'preview-ready'
+    return 'preview-needs-attention'
+  }, [
+    importLoading,
+    importSummary,
+    previewLoading,
+    previewResult,
+    previewStale,
+    readyToImport,
+  ])
+
+  const previewStatusCopy = PREVIEW_STATUS_COPY[previewStatus]
 
   const duplicateChips = previewResult?.duplicateSummary
   const currentStep = STEP_COPY[step]
@@ -192,7 +292,7 @@ function ProductImportWizard({
   const hasPreview = step >= 2 && previewResult
   const hasBlockingRows = hasPreview && !readyToImport
   const handleRunImport = async () => {
-    if (!selectedFile) return
+    if (!selectedFile || previewStale || !readyToImport) return
 
     setImportLoading(true)
     setPreviewError('')
@@ -223,6 +323,12 @@ function ProductImportWizard({
       {previewError ? (
         <AdminAlert type="error" title="Import error">
           {previewError}
+        </AdminAlert>
+      ) : null}
+
+      {previewStale ? (
+        <AdminAlert type="warning" title="Import settings changed">
+          Import settings changed. Re-run preview before importing.
         </AdminAlert>
       ) : null}
 
@@ -349,12 +455,22 @@ function ProductImportWizard({
                     </div>
                   </div>
                   <AdminAlert
-                    type={readyToImport ? 'info' : 'warning'}
-                    title={readyToImport ? 'Preview ready' : 'Preview needs attention'}
+                    type={
+                      previewStale ? 'warning' : readyToImport ? 'info' : 'warning'
+                    }
+                    title={
+                      previewStale
+                        ? 'Preview stale'
+                        : readyToImport
+                          ? 'Preview ready'
+                          : 'Preview needs attention'
+                    }
                   >
-                    {readyToImport
-                      ? 'Detailed preview review now spans the full workspace below so operators can inspect mappings and row-level outcomes without the side rail crowding the table.'
-                      : 'Detailed row validation and mapping actions are shown below. Resolve blocking rows there before running the import.'}
+                    {previewStale
+                      ? 'Import settings changed. Re-run preview before importing.'
+                      : readyToImport
+                        ? 'Detailed preview review now spans the full workspace below so operators can inspect mappings and row-level outcomes without the side rail crowding the table.'
+                        : 'Detailed row validation and mapping actions are shown below. Resolve blocking rows there before running the import.'}
                   </AdminAlert>
                 </div>
               ) : (
@@ -481,19 +597,17 @@ function ProductImportWizard({
                 <div
                   className={cn(
                     'rounded-lg border px-3 py-3 text-sm',
-                    hasBlockingRows
+                    previewStale || hasBlockingRows
                       ? 'border-amber-200 bg-amber-50/80 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100'
                       : 'border-emerald-200 bg-emerald-50/80 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100',
                   )}
                 >
                   <div className="inline-flex items-center gap-2 font-semibold">
                     <CheckCircle2 className="h-4 w-4" />
-                    {hasBlockingRows ? 'Action required before import' : 'Preview is ready for import'}
+                    {previewStatusCopy.label}
                   </div>
                   <p className="mt-2 text-xs leading-relaxed opacity-80">
-                    {hasBlockingRows
-                      ? 'Stay in the preview until validation errors and unresolved mappings are cleared.'
-                      : 'The current preview does not contain blocking rows for the selected duplicate strategy.'}
+                    {previewStatusCopy.detail}
                   </p>
                 </div>
               ) : (
@@ -551,10 +665,15 @@ function ProductImportWizard({
           </ModuleCard>
 
           {step === 3 ? (
-            <AdminAlert type={readyToImport ? 'info' : 'warning'} title="Ready to import">
-              {readyToImport
-                ? 'Import will create or update products row-by-row. Failed rows are preserved in the audit trail and can be exported after the run.'
-                : 'Resolve blocking validation or mapping issues before running the import. Preview rows marked with errors or unresolved mappings will not commit safely.'}
+            <AdminAlert
+              type={previewStale || !readyToImport ? 'warning' : 'info'}
+              title={previewStale ? 'Preview stale' : readyToImport ? 'Ready to import' : 'Not ready to import'}
+            >
+              {previewStale
+                ? 'Import settings changed. Re-run preview before importing.'
+                : readyToImport
+                  ? 'Import will create or update products row-by-row. Failed rows are preserved in the audit trail and can be exported after the run.'
+                  : 'Resolve blocking validation or mapping issues before running the import. Preview rows marked with errors or unresolved mappings will not commit safely.'}
             </AdminAlert>
           ) : null}
         </div>
@@ -602,21 +721,21 @@ function ProductImportWizard({
             <Button
               type="button"
               size="sm"
-              disabled={previewLoading || !previewResult}
+              disabled={previewLoading || !selectedFile}
               onClick={async () => {
                 const payload = await runPreview()
                 if (payload) setStep(3)
               }}
             >
-              Review & confirm
+              {previewStale ? 'Re-run preview & confirm' : 'Review & confirm'}
             </Button>
           ) : null}
           {step === 3 ? (
             <Button
               type="button"
               size="sm"
-              className={cn(!readyToImport && 'opacity-60')}
-              disabled={!readyToImport || importLoading}
+              className={cn((!readyToImport || previewStale) && 'opacity-60')}
+              disabled={!readyToImport || previewStale || importLoading}
               onClick={handleRunImport}
             >
               {importLoading ? (
@@ -664,6 +783,18 @@ function ProductImportWizard({
               </p>
             </div>
           </div>
+          {importSummary?.mediaSummary ? (
+            <div className="rounded-lg border border-slate-200/80 p-3 text-sm dark:border-slate-800">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Media Library</p>
+              <p className="mt-1 text-slate-700 dark:text-slate-200">
+                {importSummary.mediaSummary.uniqueImageUrls} unique image URL
+                {importSummary.mediaSummary.uniqueImageUrls === 1 ? '' : 's'} processed —{' '}
+                {importSummary.mediaSummary.mediaRecordsLinked} linked to existing media,{' '}
+                {importSummary.mediaSummary.mediaRecordsCreated} new reference
+                {importSummary.mediaSummary.mediaRecordsCreated === 1 ? '' : 's'} created.
+              </p>
+            </div>
+          ) : null}
           <DialogFooter className="gap-2 sm:gap-0">
             {importSummary?.failedCount > 0 ? (
               <Button

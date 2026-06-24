@@ -17,12 +17,10 @@ import {
   Users,
 } from 'lucide-react'
 import { getDashboardStats } from '../api/dashboardApi'
-import { getActivityLogs } from '../api/activityLogApi'
 import AdminAlert from '@/components/admin-ui/AdminAlert'
 import AdminPage from '@/components/admin-ui/AdminPage'
-import DashboardTabs, {
-  getDashboardTabPanelId,
-} from '@/components/admin-ui/dashboard/DashboardTabs'
+import DashboardTabs from '@/components/admin-ui/dashboard/DashboardTabs'
+import { getDashboardTabPanelId } from '@/components/admin-ui/dashboard/dashboardTabIds'
 import DashboardSectionHeader from '@/components/admin-ui/dashboard/DashboardSectionHeader'
 import QuickActionCard from '@/components/admin-ui/dashboard/QuickActionCard'
 import MetricCard from '@/components/admin-ui/dashboard/MetricCard'
@@ -30,10 +28,10 @@ import LowStockWidget from '@/components/admin-ui/dashboard/LowStockWidget'
 import QuickActionsWidget from '@/components/admin-ui/dashboard/QuickActionsWidget'
 import RecentActivityWidget from '@/components/admin-ui/dashboard/RecentActivityWidget'
 import RecentOrdersWidget from '@/components/admin-ui/dashboard/RecentOrdersWidget'
-import RevenueOverviewChart from '@/components/admin-ui/dashboard/RevenueOverviewChart'
-import OrdersOverviewChart from '@/components/admin-ui/dashboard/OrdersOverviewChart'
-import ModuleCard from '@/components/admin-ui/ModuleCard'
+import DashboardAnalyticsNote from '@/components/admin-ui/dashboard/DashboardAnalyticsNote'
 import PageLoading from '@/components/admin-ui/PageLoading'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
+import { EMPTY_DASHBOARD_STATS, parseDashboardStats } from '@/lib/dashboardStats'
 
 const DASHBOARD_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -53,13 +51,6 @@ const getNumberValue = (...values) => {
   return 0
 }
 
-const formatCurrency = (value) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  }).format(getNumberValue(value))
-
 const getTextValue = (...values) => {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) {
@@ -67,15 +58,6 @@ const getTextValue = (...values) => {
     }
   }
   return '-'
-}
-
-const extractList = (...values) => {
-  for (const value of values) {
-    if (Array.isArray(value)) {
-      return value
-    }
-  }
-  return []
 }
 
 const formatDateTime = (value) => {
@@ -91,103 +73,24 @@ const normalizeStatus = (value, fallback = 'pending') => {
 
 function Dashboard() {
   const navigate = useNavigate()
+  const formatCurrency = useFormatCurrency()
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activityWarning, setActivityWarning] = useState('')
-  const [stats, setStats] = useState({
-    totalProducts: 0,
-    totalOrders: 0,
-    totalCustomers: 0,
-    revenue: 0,
-    pendingOrders: 0,
-    returnRequests: 0,
-    recentOrders: [],
-    lowStockProducts: [],
-    recentActivity: [],
-  })
+  const [stats, setStats] = useState(EMPTY_DASHBOARD_STATS)
 
   useEffect(() => {
     const fetchDashboardStats = async () => {
       setLoading(true)
       setError('')
-      setActivityWarning('')
 
       try {
-        const [statsResponse, activityResponse] = await Promise.allSettled([
-          getDashboardStats(),
-          getActivityLogs({ limit: 5 }),
-        ])
-
-        if (statsResponse.status !== 'fulfilled') {
-          const message =
-            statsResponse.reason?.response?.data?.message ||
-            'Failed to load dashboard data. Please try again.'
-          setError(message)
-          return
-        }
-
-        const payload =
-          statsResponse.value?.data?.data || statsResponse.value?.data || statsResponse.value || {}
-
-        const totalProducts = getNumberValue(
-          payload?.totalProducts,
-          payload?.productsCount,
+        const response = await getDashboardStats()
+        setStats(parseDashboardStats(response))
+      } catch (err) {
+        setError(
+          err?.response?.data?.message || 'Failed to load dashboard data. Please try again.',
         )
-        const totalOrders = getNumberValue(
-          payload?.totalOrders,
-          payload?.ordersCount,
-        )
-        const totalCustomers = getNumberValue(
-          payload?.totalCustomers,
-          payload?.customersCount,
-        )
-        const revenue = getNumberValue(payload?.revenue, payload?.totalRevenue)
-        const pendingOrders = getNumberValue(
-          payload?.pendingOrders,
-          payload?.pendingOrdersCount,
-        )
-        const returnRequests = getNumberValue(
-          payload?.returnRequests,
-          payload?.returnRequestsCount,
-        )
-
-        const recentOrders = extractList(payload?.recentOrders, payload?.orders).slice(0, 5)
-        const lowStockProducts = extractList(
-          payload?.lowStockProducts,
-          payload?.lowStock,
-          payload?.stockAlerts,
-        ).slice(0, 5)
-
-        let recentActivity = []
-        if (activityResponse.status === 'fulfilled') {
-          const activityPayload =
-            activityResponse.value?.data?.data ||
-            activityResponse.value?.data ||
-            activityResponse.value ||
-            {}
-          recentActivity = extractList(
-            activityPayload?.activityLogs,
-            activityPayload?.logs,
-            activityPayload?.items,
-            activityResponse.value?.data?.activityLogs,
-            activityResponse.value?.activityLogs,
-          ).slice(0, 5)
-        } else {
-          setActivityWarning('Recent activity could not be loaded right now.')
-        }
-
-        setStats({
-          totalProducts,
-          totalOrders,
-          totalCustomers,
-          revenue,
-          pendingOrders,
-          returnRequests,
-          recentOrders,
-          lowStockProducts,
-          recentActivity,
-        })
       } finally {
         setLoading(false)
       }
@@ -221,10 +124,8 @@ function Dashboard() {
       icon: Boxes,
       to: '/products',
       accent: 'blue',
-      trend: '+12%',
-      trendDirection: 'up',
-      insight: 'vs last 7 days',
-      description: 'Catalog snapshot',
+      insight: 'Live catalog count',
+      description: 'Current snapshot',
     },
     {
       label: 'Total Orders',
@@ -232,9 +133,7 @@ function Dashboard() {
       icon: ClipboardList,
       to: '/orders',
       accent: 'green',
-      trend: '+18 this week',
-      trendDirection: 'up',
-      insight: 'Order volume',
+      insight: 'All-time orders',
     },
     {
       label: 'Total Customers',
@@ -242,9 +141,7 @@ function Dashboard() {
       icon: Users,
       to: '/customers',
       accent: 'violet',
-      trend: '+6%',
-      trendDirection: 'up',
-      insight: 'vs last 7 days',
+      insight: 'Registered customers',
     },
     {
       label: 'Revenue',
@@ -252,10 +149,8 @@ function Dashboard() {
       icon: DollarSign,
       to: '/orders',
       accent: 'green',
-      trend: '+12.4%',
-      trendDirection: 'up',
-      insight: 'Paid orders',
-      description: 'Demo trend indicator',
+      insight: 'Paid order total',
+      description: 'Current snapshot',
     },
     {
       label: 'Pending Orders',
@@ -265,7 +160,7 @@ function Dashboard() {
       accent: 'amber',
       trend: stats.pendingOrders > 0 ? `${stats.pendingOrders} open` : 'All clear',
       trendDirection: stats.pendingOrders > 0 ? 'neutral' : 'up',
-      insight: stats.pendingOrders > 0 ? 'Needs review' : 'Updated today',
+      insight: stats.pendingOrders > 0 ? 'Needs review' : 'No pending orders',
     },
     {
       label: 'Return Requests',
@@ -273,9 +168,9 @@ function Dashboard() {
       icon: RotateCcw,
       to: '/returns',
       accent: 'rose',
-      trend: stats.returnRequests > 0 ? '-4%' : 'Stable',
-      trendDirection: stats.returnRequests > 0 ? 'down' : 'neutral',
-      insight: stats.returnRequests > 0 ? '3 pending review' : 'No open returns',
+      trend: stats.returnRequests > 0 ? `${stats.returnRequests} open` : 'None open',
+      trendDirection: 'neutral',
+      insight: stats.returnRequests > 0 ? 'Awaiting review' : 'No open returns',
     },
   ]
 
@@ -355,17 +250,6 @@ function Dashboard() {
         </div>
       </section>
 
-      <section className="dashboard-section">
-        <DashboardSectionHeader
-          title="Analytics"
-          description="Revenue and order trends (demo visualization until reporting API is connected)."
-        />
-        <div className="mt-3 grid min-w-0 gap-4 lg:grid-cols-2">
-          <RevenueOverviewChart />
-          <OrdersOverviewChart />
-        </div>
-      </section>
-
       <section className="dashboard-section min-w-0">
         <RecentOrdersWidget
           orders={stats.recentOrders}
@@ -380,13 +264,14 @@ function Dashboard() {
       <div className="dashboard-section dashboard-pair-row min-w-0">
         <RecentActivityWidget
           activities={stats.recentActivity}
-          warning={activityWarning}
           onViewActivityLogs={() => navigate('/activity-logs')}
           formatDateTime={formatDateTime}
           getTextValue={getTextValue}
         />
         <LowStockWidget
           products={stats.lowStockProducts}
+          lowStockCount={stats.lowStockCount}
+          lowStockThreshold={stats.lowStockThreshold}
           onViewProducts={() => navigate('/products')}
           getTextValue={getTextValue}
           getNumberValue={getNumberValue}
@@ -394,6 +279,8 @@ function Dashboard() {
       </div>
 
       <QuickActionsWidget actions={quickLinks} />
+
+      <DashboardAnalyticsNote className="px-0.5" />
     </div>
   )
 
@@ -404,16 +291,15 @@ function Dashboard() {
         description="Orders, revenue, and checkout configuration at a glance."
       />
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Revenue"
           value={formatCurrency(stats.revenue)}
           icon={DollarSign}
           to="/orders"
           accent="green"
-          trend="+12.4%"
-          trendDirection="up"
-          insight="vs last 7 days"
+          insight="Paid order total"
+          description="Current snapshot"
         />
         <MetricCard
           title="Total Orders"
@@ -421,15 +307,36 @@ function Dashboard() {
           icon={ClipboardList}
           to="/orders"
           accent="blue"
-          trend="+18 this week"
-          trendDirection="up"
+          insight="All-time orders"
+        />
+        <MetricCard
+          title="Processing Orders"
+          value={stats.processingOrders}
+          icon={PackageSearch}
+          to="/orders"
+          accent="amber"
+          insight="Orders being prepared"
+        />
+        <MetricCard
+          title="Shipped Orders"
+          value={stats.shippedOrders}
+          icon={Truck}
+          to="/orders"
+          accent="violet"
+          insight="Orders in transit or delivered pipeline"
         />
       </div>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <RevenueOverviewChart />
-        <OrdersOverviewChart />
-      </div>
+      <section className="dashboard-section min-w-0">
+        <RecentOrdersWidget
+          orders={stats.recentOrders}
+          onViewOrders={() => navigate('/orders')}
+          formatCurrency={formatCurrency}
+          normalizeStatus={normalizeStatus}
+          getTextValue={getTextValue}
+          getNumberValue={getNumberValue}
+        />
+      </section>
 
       <div className="flex flex-col gap-3">
         <DashboardSectionHeader
@@ -458,20 +365,18 @@ function Dashboard() {
         </div>
       </div>
 
-      <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-        Advanced sales analytics will appear here once reporting data is available.
-      </p>
+      <DashboardAnalyticsNote />
     </div>
   )
 
   const renderInventoryTab = () => {
-    const lowStockCount = stats.lowStockProducts.length
+    const lowStockCount = stats.lowStockCount
 
     return (
       <div className="flex flex-col gap-4 md:gap-5">
         <DashboardSectionHeader
           title="Inventory"
-          description="Catalog size and stock alerts from your current snapshot."
+          description={`Catalog size and stock alerts at or below ${stats.lowStockThreshold} units.`}
         />
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -481,9 +386,8 @@ function Dashboard() {
             icon={Boxes}
             to="/products"
             accent="blue"
-            trend="+12%"
-            trendDirection="up"
-            insight="vs last 7 days"
+            insight="Live catalog count"
+            description="Current snapshot"
           />
           <MetricCard
             title="Low Stock Alerts"
@@ -493,9 +397,20 @@ function Dashboard() {
             accent="amber"
             trend={lowStockCount > 0 ? `${lowStockCount} items` : 'Healthy'}
             trendDirection={lowStockCount > 0 ? 'down' : 'up'}
-            description="Products flagged in current snapshot"
+            description={`Products at or below ${stats.lowStockThreshold} units`}
           />
         </div>
+
+        <section className="dashboard-section min-w-0">
+          <LowStockWidget
+            products={stats.lowStockProducts}
+            lowStockCount={stats.lowStockCount}
+            lowStockThreshold={stats.lowStockThreshold}
+            onViewProducts={() => navigate('/products')}
+            getTextValue={getTextValue}
+            getNumberValue={getNumberValue}
+          />
+        </section>
 
         <div className="flex flex-col gap-3">
           <DashboardSectionHeader
@@ -524,24 +439,15 @@ function Dashboard() {
           </div>
         </div>
 
-        <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-          Inventory analytics will appear here once stock movement data is available.
-        </p>
+        <DashboardAnalyticsNote />
       </div>
     )
   }
 
   const renderActivityTab = () => (
     <div className="flex flex-col gap-4 md:gap-5">
-      <ModuleCard compact>
-        <DashboardSectionHeader
-          title="Recent audit snapshot"
-          description="A quick view of the latest admin actions. Extended timelines, filters, and exports will be added in a future update."
-        />
-      </ModuleCard>
       <RecentActivityWidget
         activities={stats.recentActivity}
-        warning={activityWarning}
         onViewActivityLogs={() => navigate('/activity-logs')}
         formatDateTime={formatDateTime}
         getTextValue={getTextValue}

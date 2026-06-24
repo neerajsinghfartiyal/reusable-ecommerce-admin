@@ -23,7 +23,6 @@ import {
   MediaPickerModal,
   pickerAssetToGalleryMedia,
   SelectedImagePreview,
-  toStoredImageUrl,
 } from '@/components/media-picker'
 import AdminAlert from '@/components/admin-ui/AdminAlert'
 import AdminField from '@/components/admin-ui/AdminField'
@@ -57,11 +56,6 @@ const defaultFormData = {
   attributes: [],
   variations: [],
 }
-
-const getOptionLabel = (item, fallback) =>
-  item?.name || item?.title || item?.label || item?.slug || fallback
-
-const getOptionValue = (item) => item?._id || item?.id || item?.value || ''
 
 const extractArrayFromResponse = (response, keys = []) => {
   for (const key of keys) {
@@ -174,7 +168,6 @@ function ProductForm() {
         const categoriesResponse = categoriesRes?.data || categoriesRes
         const brandsResponse = brandsRes?.data || brandsRes
         const unitTypesResponse = unitTypesRes?.data || unitTypesRes
-        const attributesResponse = attributesRes?.data || attributesRes
 
         const categoriesData = extractArrayFromResponse(categoriesResponse, [
           'categories',

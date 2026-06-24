@@ -173,12 +173,14 @@ function PageForm() {
     const nextSections = []
 
     for (const section of sections) {
-      let parsedContent = {}
+      let parsedContent
       try {
         const rawValue = String(section.contentJson || '').trim()
         parsedContent = rawValue ? JSON.parse(rawValue) : {}
       } catch (jsonError) {
-        throw new Error(`Invalid content JSON in section "${section.sectionKey || 'new'}".`)
+        throw new Error(`Invalid content JSON in section "${section.sectionKey || 'new'}".`, {
+          cause: jsonError,
+        })
       }
 
       nextSections.push({
@@ -213,7 +215,7 @@ function PageForm() {
       return
     }
 
-    let payloadSections = []
+    let payloadSections
     try {
       payloadSections = buildPayloadSections()
     } catch (err) {

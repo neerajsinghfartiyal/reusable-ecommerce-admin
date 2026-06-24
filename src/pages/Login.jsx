@@ -11,10 +11,11 @@ import {
   Users,
 } from 'lucide-react'
 import { getPublicStoreSettings } from '../api/storeSettingApi'
-import { useAuth } from '../context/AuthContext'
-import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/useAuth'
+import { useTheme } from '../context/useTheme'
 import BrandMark from '@/components/admin-shell/BrandMark'
 import { refreshBrandingFromApi, useBranding } from '@/components/admin-shell/branding-config'
+import { refreshCurrencyFromApi } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
 const isDevEnvironment = import.meta.env.DEV
@@ -44,6 +45,7 @@ function Login() {
 
   useEffect(() => {
     refreshBrandingFromApi(getPublicStoreSettings)
+    refreshCurrencyFromApi(getPublicStoreSettings)
   }, [])
 
   const handleSubmit = async (event) => {

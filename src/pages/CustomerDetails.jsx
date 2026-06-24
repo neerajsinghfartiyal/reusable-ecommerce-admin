@@ -19,17 +19,18 @@ import { Input } from '@/components/ui/input'
 import {
   extractEntity,
   extractList,
-  formatCurrency,
   formatDateTime,
   getCustomerDisplayName,
   getCustomerStatus,
   getOrderDisplayNumber,
   CUSTOMER_STATUS_OPTIONS,
 } from '@/lib/sales'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 
 function CustomerDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const formatCurrency = useFormatCurrency()
 
   const [customer, setCustomer] = useState(null)
   const [loading, setLoading] = useState(true)

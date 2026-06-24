@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { GripVertical, ImageIcon, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -54,13 +54,29 @@ function GalleryImageGrid({
 }
 
 function GalleryThumb({ asset, onRemove, showReorderHandle = false }) {
-  const [imageError, setImageError] = useState(false)
   const imageSrc = getGalleryDisplayUrl(asset?.url)
   const label = asset?.title || asset?.fileName || 'Gallery image'
 
-  useEffect(() => {
-    setImageError(false)
-  }, [imageSrc])
+  return (
+    <GalleryThumbContent
+      key={imageSrc || 'empty'}
+      asset={asset}
+      imageSrc={imageSrc}
+      label={label}
+      onRemove={onRemove}
+      showReorderHandle={showReorderHandle}
+    />
+  )
+}
+
+function GalleryThumbContent({
+  asset,
+  imageSrc,
+  label,
+  onRemove,
+  showReorderHandle = false,
+}) {
+  const [imageError, setImageError] = useState(false)
 
   return (
     <div className="group relative overflow-hidden rounded-lg border border-slate-200/90 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">

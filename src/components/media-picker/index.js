@@ -308,7 +308,8 @@ export const appendUniqueGalleryMedia = (existing = [], incoming = [], max = 20)
 export const mergeGalleryMedia = (existing = [], incoming = [], max = 20) =>
   appendUniqueGalleryMedia(existing, incoming, max)
 
-export { default as MediaPickerModal, normalizeMediaAsset } from './MediaPickerModal'
+export { default as MediaPickerModal } from './MediaPickerModal'
+export { normalizeMediaAsset } from './normalizeMediaAsset'
 export { default as MediaAssetGrid } from './MediaAssetGrid'
 export { default as MediaAssetCard } from './MediaAssetCard'
 export { default as MediaUploadDropzone } from './MediaUploadDropzone'

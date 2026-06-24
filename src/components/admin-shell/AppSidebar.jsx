@@ -10,8 +10,8 @@ import {
   User,
 } from "lucide-react"
 
-import { useAuth } from "../../context/AuthContext"
-import { useTheme } from "../../context/ThemeContext"
+import { useAuth } from "../../context/useAuth"
+import { useTheme } from "../../context/useTheme"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -27,6 +27,8 @@ import {
 import { getStoreSettings } from "../../api/storeSettingApi"
 import BrandMark from "./BrandMark"
 import { refreshBrandingFromApi, STORE_SETTINGS_PATH, useBranding } from "./branding-config"
+import { refreshCurrencyFromApi } from "../../lib/currency"
+import { PROFILE_PATH } from "../../pages/Profile"
 import { sidebarSections } from "./sidebar-config"
 
 const isRouteActive = (pathname, basePath) =>
@@ -65,21 +67,8 @@ function AppSidebar({ onNavigate }) {
   useEffect(() => {
     if (!isAuthenticated) return
     refreshBrandingFromApi(getStoreSettings)
+    refreshCurrencyFromApi(getStoreSettings)
   }, [isAuthenticated])
-
-  useEffect(() => {
-    setOpenGroups((prev) => {
-      const next = { ...prev }
-      sidebarSections.forEach((section) => {
-        if (activeGroups[section.key]) {
-          next[section.key] = true
-        } else if (next[section.key] === undefined) {
-          next[section.key] = false
-        }
-      })
-      return next
-    })
-  }, [activeGroups])
 
   const handleLogout = () => {
     logout()
@@ -221,11 +210,17 @@ function AppSidebar({ onNavigate }) {
               ) : null}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled className="opacity-60">
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => handleNav(PROFILE_PATH)}
+            >
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem disabled className="opacity-60">
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => handleNav(`${PROFILE_PATH}#account-settings`)}
+            >
               <Settings className="mr-2 h-4 w-4" />
               Account Settings
             </DropdownMenuItem>

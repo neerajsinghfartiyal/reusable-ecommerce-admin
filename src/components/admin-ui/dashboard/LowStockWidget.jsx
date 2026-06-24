@@ -13,7 +13,14 @@ const lowStockColumns = [
 const viewButtonClass =
   'dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
 
-function LowStockWidget({ products = [], onViewProducts, getTextValue, getNumberValue }) {
+function LowStockWidget({
+  products = [],
+  lowStockCount = 0,
+  lowStockThreshold = 10,
+  onViewProducts,
+  getTextValue,
+  getNumberValue,
+}) {
   const productRows = products.slice(0, 5)
 
   return (
@@ -26,7 +33,11 @@ function LowStockWidget({ products = [], onViewProducts, getTextValue, getNumber
       <DashboardSectionHeader
         compact
         title="Low Stock Products"
-        description="Products that need replenishment soon."
+        description={
+          lowStockCount > 0
+            ? `${lowStockCount} product${lowStockCount === 1 ? '' : 's'} at or below ${lowStockThreshold} units.`
+            : `Products at or below ${lowStockThreshold} units will appear here.`
+        }
         action={
           <Button
             type="button"

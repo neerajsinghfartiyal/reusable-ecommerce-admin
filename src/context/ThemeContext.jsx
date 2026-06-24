@@ -1,20 +1,16 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ThemeContext } from './theme-context'
 
 const THEME_STORAGE_KEY = 'ecommerce-admin-theme'
 
-const ThemeContext = createContext(undefined)
-
 function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState('light')
-
-  useEffect(() => {
+  const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
     if (savedTheme === 'dark' || savedTheme === 'light') {
-      setTheme(savedTheme)
-    } else {
-      setTheme('light')
+      return savedTheme
     }
-  }, [])
+    return 'light'
+  })
 
   useEffect(() => {
     const root = document.documentElement
@@ -44,13 +40,5 @@ function ThemeProvider({ children }) {
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
-function useTheme() {
-  const context = useContext(ThemeContext)
-  if (!context) {
-    throw new Error('useTheme must be used inside ThemeProvider')
-  }
-  return context
-}
-
-export { ThemeProvider, useTheme }
+export { ThemeProvider }
 

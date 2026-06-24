@@ -1,7 +1,5 @@
 import { cn } from "@/lib/utils"
-
-export const getDashboardTabId = (tabId) => `dashboard-tab-${tabId}`
-export const getDashboardTabPanelId = (tabId) => `dashboard-panel-${tabId}`
+import { getDashboardTabId, getDashboardTabPanelId } from "./dashboardTabIds"
 
 function DashboardTabs({ activeTab, onTabChange, tabs = [] }) {
   return (

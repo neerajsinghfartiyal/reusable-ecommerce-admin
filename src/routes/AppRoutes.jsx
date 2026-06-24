@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import Login from '../pages/Login'
 import Dashboard from '../pages/Dashboard'
 import Products from '../pages/Products'
@@ -26,6 +26,7 @@ import AdminUsers from '../pages/AdminUsers'
 import PaymentMethods from '../pages/PaymentMethods'
 import ShippingMethods from '../pages/ShippingMethods'
 import AdminShell from '../components/admin-shell/AdminShell'
+import Profile from '../pages/Profile'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuth()
@@ -35,17 +36,6 @@ function ProtectedRoute({ children }) {
   }
 
   return children
-}
-
-function PlaceholderPage({ title }) {
-  return (
-    <section>
-      <h1 className="page-title">{title}</h1>
-      <div className="placeholder-card">
-        <p>This page is coming soon.</p>
-      </div>
-    </section>
-  )
 }
 
 function AppRoutes() {
@@ -100,6 +90,7 @@ function AppRoutes() {
           element={<ActivityLogs />}
         />
         <Route path="/admin-users" element={<AdminUsers />} />
+        <Route path="/profile" element={<Profile />} />
       </Route>
       <Route
         path="/"

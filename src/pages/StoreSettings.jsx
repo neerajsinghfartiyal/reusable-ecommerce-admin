@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getStoreSettings, updateStoreSettings } from '../api/storeSettingApi'
 import { applyBrandingFromSettings, extractSettingsPayload } from '@/components/admin-shell/branding-config'
+import { applyCurrencyFromSettings } from '@/lib/currency'
+import {
+  buildStoreSettingsForm,
+  buildStoreSettingsPayload,
+  EMPTY_STORE_SETTINGS_FORM,
+  extractStoreSettings,
+} from '@/lib/storeSettingsForm'
 import {
   assetFromPickerSelection,
   featuredMediaFromUrl,
@@ -18,81 +25,6 @@ import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 
-const getNumberValue = (...values) => {
-  for (const value of values) {
-    const parsed = Number(value)
-    if (!Number.isNaN(parsed)) return parsed
-  }
-  return 0
-}
-
-const getTextValue = (...values) => {
-  for (const value of values) {
-    if (typeof value === 'string') return value
-  }
-  return ''
-}
-
-const extractSettings = (response) =>
-  response?.data?.data ||
-  response?.data?.settings ||
-  response?.data ||
-  response?.settings ||
-  {}
-
-const buildFormFromSettings = (settings) => {
-  const address = settings?.address || {}
-  const seo = settings?.seo || settings?.seoDefaults || {}
-  const social = settings?.social || settings?.socialLinks || {}
-  const contact = settings?.contact || {}
-  const commerce = settings?.commerce || {}
-
-  return {
-    storeName: getTextValue(settings?.storeName, settings?.name),
-    storeTagline: getTextValue(settings?.storeTagline, settings?.tagline),
-    logoUrl: getTextValue(settings?.logoUrl, settings?.logo),
-    faviconUrl: getTextValue(settings?.faviconUrl, settings?.favicon),
-
-    email: getTextValue(settings?.storeEmail, contact?.email, settings?.email),
-    phone: getTextValue(settings?.storePhone, contact?.phone, settings?.phone),
-    addressLine1: getTextValue(address?.line1, address?.street, settings?.addressLine1),
-    addressLine2: getTextValue(address?.line2, settings?.addressLine2),
-    city: getTextValue(address?.city, settings?.city),
-    state: getTextValue(address?.state, settings?.state),
-    country: getTextValue(address?.country, settings?.country),
-    postalCode: getTextValue(address?.postalCode, address?.zip, settings?.postalCode),
-
-    currency: getTextValue(settings?.currency, commerce?.currency, 'USD'),
-    currencySymbol: getTextValue(settings?.currencySymbol, commerce?.currencySymbol, '$'),
-    taxEnabled:
-      typeof settings?.taxEnabled === 'boolean'
-        ? settings.taxEnabled
-        : getNumberValue(settings?.taxPercentage, commerce?.defaultTaxRate, 0) > 0,
-    defaultTaxRate: getTextValue(
-      String(getNumberValue(settings?.taxPercentage, commerce?.defaultTaxRate, 0)),
-    ),
-    shippingEnabled:
-      typeof settings?.shippingEnabled === 'boolean'
-        ? settings.shippingEnabled
-        : getNumberValue(settings?.shippingCharge, commerce?.freeShippingThreshold, 0) > 0,
-    freeShippingThreshold: getTextValue(
-      String(getNumberValue(settings?.shippingCharge, commerce?.freeShippingThreshold, 0)),
-    ),
-
-    seoTitle: getTextValue(seo?.title, settings?.seoTitle),
-    seoDescription: getTextValue(seo?.description, settings?.seoDescription),
-    seoKeywords: Array.isArray(seo?.keywords)
-      ? seo.keywords.join(', ')
-      : getTextValue(seo?.keywords, settings?.seoKeywords),
-
-    facebook: getTextValue(social?.facebook),
-    instagram: getTextValue(social?.instagram),
-    linkedin: getTextValue(social?.linkedin),
-    twitter: getTextValue(social?.twitter),
-    youtube: getTextValue(social?.youtube),
-  }
-}
-
 function StoreSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -101,43 +33,17 @@ function StoreSettings() {
   const [logoPickerOpen, setLogoPickerOpen] = useState(false)
   const [logoPickerTab, setLogoPickerTab] = useState('library')
   const [logoPickerSnapshot, setLogoPickerSnapshot] = useState([])
-  const [form, setForm] = useState({
-    storeName: '',
-    storeTagline: '',
-    logoUrl: '',
-    faviconUrl: '',
-    email: '',
-    phone: '',
-    addressLine1: '',
-    addressLine2: '',
-    city: '',
-    state: '',
-    country: '',
-    postalCode: '',
-    currency: 'USD',
-    currencySymbol: '$',
-    taxEnabled: false,
-    defaultTaxRate: '0',
-    shippingEnabled: false,
-    freeShippingThreshold: '0',
-    seoTitle: '',
-    seoDescription: '',
-    seoKeywords: '',
-    facebook: '',
-    instagram: '',
-    linkedin: '',
-    twitter: '',
-    youtube: '',
-  })
+  const [form, setForm] = useState(EMPTY_STORE_SETTINGS_FORM)
 
   const loadSettings = async () => {
     setLoading(true)
     setError('')
     try {
       const response = await getStoreSettings()
-      const settings = extractSettings(response)
-      setForm(buildFormFromSettings(settings))
+      const settings = extractStoreSettings(response)
+      setForm(buildStoreSettingsForm(settings))
       applyBrandingFromSettings(settings)
+      applyCurrencyFromSettings(settings)
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load store settings.')
     } finally {
@@ -176,55 +82,16 @@ function StoreSettings() {
     setError('')
     setSuccessMessage('')
 
-    const payload = {
-      storeName: form.storeName.trim(),
-      storeEmail: form.email.trim(),
-      storePhone: form.phone.trim(),
-      currency: form.currency.trim(),
-      logo: form.logoUrl.trim(),
-      address: {
-        street: form.addressLine1.trim(),
-        city: form.city.trim(),
-        state: form.state.trim(),
-        postalCode: form.postalCode.trim(),
-        country: form.country.trim(),
-      },
-      taxPercentage: form.taxEnabled ? getNumberValue(form.defaultTaxRate, 0) : 0,
-      shippingCharge: form.shippingEnabled ? getNumberValue(form.freeShippingThreshold, 0) : 0,
-
-      // Kept for broader compatibility if backend later supports these keys.
-      storeTagline: form.storeTagline.trim(),
-      faviconUrl: form.faviconUrl.trim(),
-      addressLine2: form.addressLine2.trim(),
-      currencySymbol: form.currencySymbol.trim(),
-      seo: {
-        title: form.seoTitle.trim(),
-        description: form.seoDescription.trim(),
-        keywords: form.seoKeywords
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean),
-      },
-      social: {
-        facebook: form.facebook.trim(),
-        instagram: form.instagram.trim(),
-        linkedin: form.linkedin.trim(),
-        twitter: form.twitter.trim(),
-        youtube: form.youtube.trim(),
-      },
-    }
+    const payload = buildStoreSettingsPayload(form)
 
     setSaving(true)
     try {
       const response = await updateStoreSettings(payload)
       const saved = extractSettingsPayload(response)
-      applyBrandingFromSettings({
-        ...saved,
-        storeName: payload.storeName,
-        logo: payload.logo,
-      })
+      applyBrandingFromSettings(saved)
+      applyCurrencyFromSettings(saved)
+      setForm(buildStoreSettingsForm(saved))
       setSuccessMessage('Store settings updated successfully.')
-      await loadSettings()
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to update store settings.')
     } finally {
@@ -262,8 +129,7 @@ function StoreSettings() {
         <form onSubmit={handleSave} className="space-y-4 md:space-y-5">
           <ModuleCard title="Store Identity & Admin Branding">
             <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-              Store name and logo update the admin sidebar and login screen. Admin panel
-              subtitle uses the default until the API supports a dedicated field.
+              Store name, tagline, and logo update the admin sidebar and login screen.
             </p>
             <ModuleFormGrid columns={2}>
               <AdminField
@@ -279,7 +145,7 @@ function StoreSettings() {
 
               <AdminField
                 label="Store Tagline"
-                description="Storefront copy only; not persisted by the API yet (planned)."
+                description="Shown as the admin panel subtitle and storefront copy."
               >
                 <Input
                   type="text"
@@ -331,7 +197,7 @@ function StoreSettings() {
 
               <AdminField
                 label="Favicon URL"
-                description="Browser tab icon; not used in admin branding yet."
+                description="Browser tab icon URL for the storefront."
               >
                 <Input
                   type="text"
@@ -549,6 +415,25 @@ function StoreSettings() {
                   value={form.youtube}
                   onChange={(event) => handleFieldChange('youtube', event.target.value)}
                 />
+              </AdminField>
+            </ModuleFormGrid>
+          </ModuleCard>
+
+          <ModuleCard title="Operations">
+            <ModuleFormGrid columns={1}>
+              <AdminField
+                label="Maintenance Mode"
+                description="When enabled, the storefront can use this flag to show a maintenance state."
+              >
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <Checkbox
+                    checked={form.maintenanceMode}
+                    onCheckedChange={(checked) =>
+                      handleFieldChange('maintenanceMode', checked === true)
+                    }
+                  />
+                  Enable maintenance mode
+                </label>
               </AdminField>
             </ModuleFormGrid>
           </ModuleCard>

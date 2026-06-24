@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { deleteCustomer, getCustomers, updateCustomer } from '../api/customerApi'
+import { Plus } from 'lucide-react'
+import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../api/customerApi'
 import AdminAlert from '@/components/admin-ui/AdminAlert'
+import AdminField from '@/components/admin-ui/AdminField'
 import ConfirmActionDialog from '@/components/admin-ui/ConfirmActionDialog'
 import AdminFilterBar from '@/components/admin-ui/AdminFilterBar'
 import AdminFilterField from '@/components/admin-ui/AdminFilterField'
@@ -9,14 +11,23 @@ import AdminPage from '@/components/admin-ui/AdminPage'
 import AdminPagination from '@/components/admin-ui/AdminPagination'
 import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
-import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
+import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
 import PageLoading from '@/components/admin-ui/PageLoading'
 import {
+  extractEntity,
   extractList,
   extractPagination,
   formatDateTime,
@@ -34,6 +45,14 @@ const getStatusFilterLabel = (status) => {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 const statusEditOptions = ['active', 'inactive']
+
+const defaultCreateForm = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  status: 'active',
+}
 
 function Customers() {
   const navigate = useNavigate()
@@ -63,15 +82,19 @@ function Customers() {
     totalPages: 1,
     pageLimit: 10,
   })
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [createForm, setCreateForm] = useState(defaultCreateForm)
+  const [createError, setCreateError] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  const loadCustomers = async () => {
+  const loadCustomers = async ({ page = currentPage, search = searchQuery, status = statusFilter } = {}) => {
     setLoading(true)
     setError('')
 
     try {
-      const params = { page: currentPage }
-      if (searchQuery) params.search = searchQuery
-      if (statusFilter !== 'all') params.status = statusFilter
+      const params = { page }
+      if (search) params.search = search
+      if (status !== 'all') params.status = status
 
       const response = await getCustomers(params)
       const list = extractList(response, ['customers'])
@@ -92,7 +115,7 @@ function Customers() {
             paginationData?.currentPage,
             response?.data?.data?.currentPage,
             response?.data?.currentPage,
-            currentPage,
+            page,
           ),
         ),
         totalPages: Math.max(
@@ -126,6 +149,61 @@ function Customers() {
     event.preventDefault()
     setCurrentPage(1)
     setSearchQuery(searchInput.trim())
+  }
+
+  const resetCreateForm = () => {
+    setCreateForm(defaultCreateForm)
+    setCreateError('')
+  }
+
+  const openCreateDialog = () => {
+    setError('')
+    setSuccessMessage('')
+    resetCreateForm()
+    setCreateDialogOpen(true)
+  }
+
+  const handleCreateCustomer = async (event) => {
+    event.preventDefault()
+
+    if (!createForm.firstName.trim() || !createForm.email.trim()) {
+      setCreateError('First name and email are required.')
+      return
+    }
+
+    setCreating(true)
+    setCreateError('')
+
+    try {
+      const response = await createCustomer({
+        firstName: createForm.firstName.trim(),
+        lastName: createForm.lastName.trim(),
+        email: createForm.email.trim(),
+        phone: createForm.phone.trim(),
+        status: createForm.status,
+      })
+
+      const created = extractEntity(response, ['customer'])
+      const customerName = getCustomerDisplayName(created, createForm.email.trim())
+
+      setCreateDialogOpen(false)
+      resetCreateForm()
+      setSearchInput('')
+      setSearchQuery('')
+      setStatusFilter('all')
+      setCurrentPage(1)
+      setSuccessMessage(`Customer "${customerName}" created successfully.`)
+      await loadCustomers({ page: 1, search: '', status: 'all' })
+    } catch (err) {
+      const backendMessage = err?.response?.data?.message || ''
+      setCreateError(
+        backendMessage.includes('already exists') || backendMessage.includes('E11000')
+          ? 'A customer with this email already exists.'
+          : backendMessage || 'Failed to create customer.',
+      )
+    } finally {
+      setCreating(false)
+    }
   }
 
   const handleEditStart = (customer) => {
@@ -194,7 +272,11 @@ function Customers() {
       setPendingDeleteCustomer(null)
       await loadCustomers()
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to delete customer.')
+      setPendingDeleteCustomer(null)
+      setError(
+        err?.response?.data?.message ||
+          'Failed to delete customer. Customers with linked orders or return requests cannot be removed.',
+      )
     } finally {
       setDeletingId('')
     }
@@ -253,6 +335,13 @@ function Customers() {
             ))}
           </AdminSelect>
         </AdminFilterField>
+
+        <div className="flex items-end">
+          <Button type="button" size="sm" onClick={openCreateDialog}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Customer
+          </Button>
+        </div>
       </AdminFilterBar>
 
       {loading ? <PageLoading message="Loading customers..." /> : null}
@@ -284,7 +373,13 @@ function Customers() {
           {customers.length === 0 ? (
             <ModuleEmptyState
               title="No customers found"
-              description="Customers will appear here once accounts are created."
+              description="Create a customer account to get started."
+              action={
+                <Button type="button" size="sm" onClick={openCreateDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Customer
+                </Button>
+              }
             />
           ) : (
             <ModuleTable
@@ -464,12 +559,114 @@ function Customers() {
         title="Delete customer?"
         description={`Delete ${getCustomerDisplayName(
           pendingDeleteCustomer || {},
-        )}? This permanently removes the record in the current backend flow.`}
+        )}? This permanently removes the customer record. Deletion is blocked when linked orders or return/exchange requests exist — use inactive status instead to preserve history.`}
         confirmLabel={deletingId ? 'Deleting…' : 'Delete customer'}
         confirmVariant="destructive"
         confirmDisabled={Boolean(deletingId)}
         onConfirm={handleDelete}
       />
+
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          setCreateDialogOpen(open)
+          if (!open) resetCreateForm()
+        }}
+      >
+        <DialogContent className="border-slate-200 bg-white sm:max-w-lg dark:border-slate-800 dark:bg-slate-900">
+          <form onSubmit={handleCreateCustomer}>
+            <DialogHeader>
+              <DialogTitle>Create Customer</DialogTitle>
+              <DialogDescription>
+                Add a new customer record. First name and email are required.
+              </DialogDescription>
+            </DialogHeader>
+
+            {createError ? (
+              <AdminAlert type="error" title="Could not create customer" className="mt-4">
+                {createError}
+              </AdminAlert>
+            ) : null}
+
+            <ModuleFormGrid columns={2} className="mt-4">
+              <AdminField label="First Name" required>
+                <Input
+                  type="text"
+                  value={createForm.firstName}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, firstName: event.target.value }))
+                  }
+                  placeholder="Jane"
+                  autoFocus
+                />
+              </AdminField>
+
+              <AdminField label="Last Name">
+                <Input
+                  type="text"
+                  value={createForm.lastName}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, lastName: event.target.value }))
+                  }
+                  placeholder="Doe"
+                />
+              </AdminField>
+
+              <AdminField label="Email" required>
+                <Input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, email: event.target.value }))
+                  }
+                  placeholder="jane@example.com"
+                />
+              </AdminField>
+
+              <AdminField label="Phone">
+                <Input
+                  type="text"
+                  value={createForm.phone}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, phone: event.target.value }))
+                  }
+                  placeholder="+1 555 0100"
+                />
+              </AdminField>
+
+              <AdminField label="Status" className="md:col-span-2">
+                <AdminSelect
+                  value={createForm.status}
+                  aria-label="Customer status"
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, status: event.target.value }))
+                  }
+                >
+                  {statusEditOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                    </option>
+                  ))}
+                </AdminSelect>
+              </AdminField>
+            </ModuleFormGrid>
+
+            <DialogFooter className="mt-6 gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setCreateDialogOpen(false)}
+                disabled={creating}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creating}>
+                {creating ? 'Creating...' : 'Create Customer'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AdminPage>
   )
 }

@@ -239,7 +239,7 @@ function PaymentMethods() {
       .filter(Boolean)
 
   const buildCreatePayload = () => {
-    let parsedConfig = {}
+    let parsedConfig
     try {
       const rawConfig = String(form.configJson || '').trim()
       parsedConfig = rawConfig ? JSON.parse(rawConfig) : {}

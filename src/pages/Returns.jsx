@@ -10,7 +10,6 @@ import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ModuleActions from '@/components/admin-ui/ModuleActions'
-import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
@@ -21,6 +20,7 @@ import {
   formatDateTime,
   getCustomerDisplayName,
   getNumberValue,
+  getReplacementOrderNumber,
 } from '@/lib/sales'
 
 const typeFilters = ['all', 'return', 'exchange']
@@ -272,7 +272,14 @@ function Returns() {
                     </td>
                     <td className="max-w-[18rem] text-slate-600 dark:text-slate-400">{reason}</td>
                     <td>
-                      <ModuleStatusBadge status={status} />
+                      <div className="space-y-1">
+                        <ModuleStatusBadge status={status} />
+                        {type === 'exchange' && getReplacementOrderNumber(request) ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Replacement: {getReplacementOrderNumber(request)}
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="text-slate-600 dark:text-slate-400">{createdAt}</td>
                     <td>

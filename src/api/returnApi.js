@@ -11,3 +11,9 @@ export const updateReturnRequestStatus = (id, data) =>
   axiosClient.put(`/api/returns/${id}/status`, data)
 
 export const closeReturnRequest = (id) => axiosClient.delete(`/api/returns/${id}`)
+
+export const createReplacementOrder = (id) =>
+  axiosClient.post(`/api/returns/${id}/replacement-order`)
+
+export const linkReplacementOrder = (id, replacementOrderId) =>
+  axiosClient.put(`/api/returns/${id}/replacement-order`, { replacementOrderId })

@@ -26,6 +26,7 @@ import PageLoading from '@/components/admin-ui/PageLoading'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
 import { cn } from '@/lib/utils'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 
 const getNumberValue = (...values) => {
   for (const value of values) {
@@ -47,13 +48,6 @@ const getTextValue = (...values) => {
 
   return '-'
 }
-
-const formatPrice = (value) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  }).format(getNumberValue(value))
 
 const getImageUrl = (imagePath) => {
   if (!imagePath) return ''
@@ -82,7 +76,7 @@ const getVariationStock = (variations = []) => {
   return quantities.reduce((sum, value) => sum + value, 0)
 }
 
-const getVariationPriceDisplay = (variations = [], fallbackPrice) => {
+const getVariationPriceDisplay = (variations = [], fallbackPrice, formatPrice) => {
   if (!Array.isArray(variations) || variations.length === 0) {
     return formatPrice(fallbackPrice)
   }
@@ -104,7 +98,7 @@ const getVariationPriceDisplay = (variations = [], fallbackPrice) => {
   return `${formatPrice(minPrice)} - ${formatPrice(maxPrice)}`
 }
 
-const getProductId = (product, index = 0) => {
+const getProductId = (product) => {
   const id = product?._id || product?.id
   if (id === undefined || id === null || id === '') {
     return ''
@@ -127,6 +121,7 @@ const openBulkConfirm = (setBulkConfirm, setBulkDialogOpen, setBulkError, config
 }
 
 function Products() {
+  const formatPrice = useFormatCurrency()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -234,7 +229,7 @@ function Products() {
   const visibleProductIds = useMemo(
     () =>
       products
-        .map((product, index) => getProductId(product, index))
+        .map((product) => getProductId(product))
         .filter((id) => id.length > 0),
     [products],
   )
@@ -839,7 +834,7 @@ function Products() {
               data={products}
               emptyMessage="No products found."
               renderRow={(product, index) => {
-                const rowProductId = getProductId(product, index)
+                const rowProductId = getProductId(product)
                 const productId = rowProductId || `product-row-${index}`
                 const isSelectable = Boolean(rowProductId)
                 const isSelected = isSelectable && selectedProductIds.includes(rowProductId)
@@ -886,7 +881,7 @@ function Products() {
                       product?.countInStock,
                     )
                 const status = getTextValue(product?.status, 'draft')
-                const priceDisplay = getVariationPriceDisplay(variations, fallbackPrice)
+                const priceDisplay = getVariationPriceDisplay(variations, fallbackPrice, formatPrice)
 
                   return (
                     <tr

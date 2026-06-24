@@ -1,7 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { loginAdmin } from '../api/authApi'
-
-const AuthContext = createContext(null)
+import { AuthContext } from './auth-context'
 
 const getStoredAdmin = () => {
   const storedAdmin = localStorage.getItem('adminUser')
@@ -16,15 +15,8 @@ const getStoredAdmin = () => {
 }
 
 export function AuthProvider({ children }) {
-  const [admin, setAdmin] = useState(null)
-  const [token, setToken] = useState(localStorage.getItem('adminToken') || '')
-
-  useEffect(() => {
-    const storedAdmin = getStoredAdmin()
-    if (storedAdmin) {
-      setAdmin(storedAdmin)
-    }
-  }, [])
+  const [admin, setAdmin] = useState(() => getStoredAdmin())
+  const [token, setToken] = useState(() => localStorage.getItem('adminToken') || '')
 
   const login = async (email, password) => {
     const response = await loginAdmin(email, password)
@@ -62,14 +54,4 @@ export function AuthProvider({ children }) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-
-  if (!context) {
-    throw new Error('useAuth must be used inside AuthProvider')
-  }
-
-  return context
 }

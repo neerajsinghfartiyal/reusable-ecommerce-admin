@@ -554,7 +554,14 @@ function ProductImportPreviewTable({
                           {renderDetailField('Price', row.normalizedData?.price)}
                           {renderDetailField('Sale price', row.normalizedData?.sale_price)}
                           {renderDetailField('Stock', row.normalizedData?.stock)}
+                          {renderDetailField('Featured image', row.normalizedData?.featured_image)}
+                          {renderDetailField('Gallery images', row.normalizedData?.gallery_images)}
                         </div>
+                        {row.mediaImport ? (
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            {row.mediaImport.note}
+                          </p>
+                        ) : null}
                       </div>
 
                       {row.nameDuplicate ? (

@@ -64,7 +64,12 @@ function RecentOrdersWidget({
                 order?._id || order?.id || order?.orderId || `recent-order-${index}`
               const customerName = getTextValue(
                 order?.customerName,
+                [order?.customer?.firstName, order?.customer?.lastName]
+                  .filter(Boolean)
+                  .join(" ")
+                  .trim(),
                 order?.customer?.name,
+                order?.customer?.email,
                 order?.user?.name,
                 order?.email,
                 "Customer"
@@ -85,7 +90,11 @@ function RecentOrdersWidget({
                 order?.payment?.status,
                 "pending"
               )
-              const orderStatus = normalizeStatus(order?.status, "pending")
+              const orderStatus = normalizeStatus(
+                order?.orderStatus,
+                order?.status,
+                "pending"
+              )
 
               return (
                 <tr key={orderId} className="text-slate-700 dark:text-slate-200">

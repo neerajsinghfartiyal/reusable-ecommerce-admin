@@ -23,6 +23,7 @@ import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
 import PageLoading from '@/components/admin-ui/PageLoading'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 const statusFilters = ['all', 'active', 'inactive']
 
 const getStatusFilterLabel = (status) => {
@@ -97,6 +98,19 @@ const getStatus = (coupon) => {
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '-')
 
+const formatCouponDiscountDisplay = (coupon, formatCurrency) => {
+  const value = getDiscountValue(coupon)
+  if (String(coupon?.discountType || '').toLowerCase() === 'percentage') {
+    return `${value}%`
+  }
+  return formatCurrency(value)
+}
+
+const formatCouponMinimumOrderDisplay = (coupon, formatCurrency) => {
+  const amount = getMinimumOrderAmount(coupon)
+  return amount > 0 ? formatCurrency(amount) : '-'
+}
+
 const getFriendlyCreateError = (error) => {
   const message = error?.response?.data?.message || ''
   if (message.toLowerCase().includes('duplicate') || message.toLowerCase().includes('code')) {
@@ -106,6 +120,7 @@ const getFriendlyCreateError = (error) => {
 }
 
 function Coupons() {
+  const formatCurrency = useFormatCurrency()
   const location = useLocation()
   const [coupons, setCoupons] = useState([])
   const [loading, setLoading] = useState(true)
@@ -575,7 +590,7 @@ function Coupons() {
                           }
                         />
                       ) : (
-                        getDiscountValue(coupon)
+                        formatCouponDiscountDisplay(coupon, formatCurrency)
                       )}
                     </td>
                     <td>
@@ -593,7 +608,7 @@ function Coupons() {
                           }
                         />
                       ) : (
-                        getMinimumOrderAmount(coupon)
+                        formatCouponMinimumOrderDisplay(coupon, formatCurrency)
                       )}
                     </td>
                     <td className="text-slate-600 dark:text-slate-400">

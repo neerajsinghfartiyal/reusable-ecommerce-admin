@@ -20,6 +20,7 @@ import ModuleActions from '@/components/admin-ui/ModuleActions'
 import ModuleCard from '@/components/admin-ui/ModuleCard'
 import ModuleEmptyState from '@/components/admin-ui/ModuleEmptyState'
 import ModuleFormGrid from '@/components/admin-ui/ModuleFormGrid'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 import ModuleStatusBadge from '@/components/admin-ui/ModuleStatusBadge'
 import ModuleTable from '@/components/admin-ui/ModuleTable'
 import PageLoading from '@/components/admin-ui/PageLoading'
@@ -60,13 +61,6 @@ const getNumberValue = (...values) => {
   }
   return 0
 }
-
-const formatCurrency = (value) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  }).format(getNumberValue(value))
 
 const extractList = (response) => {
   const checks = [
@@ -114,6 +108,7 @@ const getCountriesDisplay = (value) => {
 }
 
 function ShippingMethods() {
+  const formatCurrency = useFormatCurrency()
   const [shippingMethods, setShippingMethods] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -240,7 +235,7 @@ function ShippingMethods() {
   }
 
   const buildCreatePayload = () => {
-    let parsedConfig = {}
+    let parsedConfig
     try {
       const rawConfig = String(form.configJson || '').trim()
       parsedConfig = rawConfig ? JSON.parse(rawConfig) : {}

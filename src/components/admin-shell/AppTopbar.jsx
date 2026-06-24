@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
-import { Bell, LogOut, Moon, Search, Settings, Sun, Users } from "lucide-react"
+import { Bell, LogOut, Moon, Search, Settings, Sun, User, Users } from "lucide-react"
 
-import { useAuth } from "../../context/AuthContext"
-import { useTheme } from "../../context/ThemeContext"
+import { useAuth } from "../../context/useAuth"
+import { useTheme } from "../../context/useTheme"
+import { PROFILE_PATH } from "../../pages/Profile"
+import { STORE_SETTINGS_PATH } from "./branding-config"
 import { getBreadcrumbDisplay, getPageMeta, QUICK_NAV_LINKS } from "./topbar-config"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -236,11 +238,22 @@ function AppTopbar({ onOpenSidebar }) {
               </p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/settings")}>
+            <DropdownMenuItem className="cursor-pointer" onClick={() => navigate(PROFILE_PATH)}>
+              <User className="mr-2 h-4 w-4" />
+              Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => navigate(`${PROFILE_PATH}#account-settings`)}
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Account Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer" onClick={() => navigate(STORE_SETTINGS_PATH)}>
               <Settings className="mr-2 h-4 w-4" />
               Store Settings
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/admin-users")}>
+            <DropdownMenuItem className="cursor-pointer" onClick={() => navigate("/admin-users")}>
               <Users className="mr-2 h-4 w-4" />
               Admin Users
             </DropdownMenuItem>

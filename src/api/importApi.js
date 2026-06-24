@@ -44,7 +44,7 @@ export const downloadProductImportTemplateCsv = async () => {
     return response
   } catch (error) {
     const message = await parseBlobErrorMessage(error)
-    throw new Error(message || 'Failed to download CSV template.')
+    throw new Error(message || 'Failed to download CSV template.', { cause: error })
   }
 }
 
@@ -57,7 +57,7 @@ export const downloadProductImportTemplateXlsx = async () => {
     return response
   } catch (error) {
     const message = await parseBlobErrorMessage(error)
-    throw new Error(message || 'Failed to download XLSX template.')
+    throw new Error(message || 'Failed to download XLSX template.', { cause: error })
   }
 }
 
@@ -124,6 +124,6 @@ export const downloadProductImportErrorsCsv = async ({ failedRows, historyId } =
     return response
   } catch (error) {
     const message = await parseBlobErrorMessage(error)
-    throw new Error(message || 'Failed to download error report.')
+    throw new Error(message || 'Failed to download error report.', { cause: error })
   }
 }

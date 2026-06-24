@@ -3,7 +3,7 @@ import AdminSelect from '@/components/admin-ui/AdminSelect'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export const BULK_ACTION_OPTIONS = [
+const BULK_ACTION_OPTIONS = [
   { value: '', label: 'Choose bulk action…' },
   { value: 'delete', label: 'Delete selected' },
   { value: 'draft', label: 'Set status to Draft' },

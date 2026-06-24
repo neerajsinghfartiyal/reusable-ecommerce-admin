@@ -1,7 +1,6 @@
 /**
- * Admin branding defaults + runtime merge from Store Settings (Branding-2).
- * Persisted on server today: storeName, logo (via PUT /api/settings).
- * Planned: storeTagline, favicon, darkLogoUrl, Media Library logo picker sync.
+ * Admin branding defaults + runtime merge from Store Settings.
+ * Persisted on server: storeName, storeTagline, logo, favicon (via PUT /api/settings).
  */
 
 import { useSyncExternalStore } from 'react'
@@ -65,18 +64,21 @@ export const getBrandInitials = (brandName, fallback = DEFAULT_BRANDING.initials
 export const resolveBrandingFromSettings = (settings) => {
   const storeName = getTextValue(settings?.storeName, settings?.name)
   const logoUrl = getTextValue(settings?.logoUrl, settings?.logo)
+  const storeTagline = getTextValue(settings?.storeTagline, settings?.tagline)
   const brandName = storeName || DEFAULT_BRANDING.brandName
 
   return {
     ...DEFAULT_BRANDING,
     brandName,
-    brandSubtitle: DEFAULT_BRANDING.brandSubtitle,
+    brandSubtitle: storeTagline || DEFAULT_BRANDING.brandSubtitle,
     logoUrl,
     darkLogoUrl: getTextValue(settings?.darkLogoUrl) || '',
     initials: getBrandInitials(brandName, DEFAULT_BRANDING.initials),
-    tagline: storeName
-      ? `Manage ${storeName} catalog, orders, and store operations in one place.`
-      : DEFAULT_BRANDING.tagline,
+    tagline:
+      storeTagline ||
+      (storeName
+        ? `Manage ${storeName} catalog, orders, and store operations in one place.`
+        : DEFAULT_BRANDING.tagline),
   }
 }
 

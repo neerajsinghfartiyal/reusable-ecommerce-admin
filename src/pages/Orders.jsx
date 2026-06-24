@@ -26,19 +26,20 @@ import ModuleTable from '@/components/admin-ui/ModuleTable'
 import {
   extractList,
   extractPagination,
-  formatCurrency,
   formatDateTime,
   formatFilterOptionLabel,
   getCustomerDisplayName,
   getNumberValue,
   getOrderDisplayNumber,
   getOrderFulfillment,
+  getOrderPaymentMethodLabel,
   hasOrderTracking,
   FULFILLMENT_STATUS_OPTIONS,
   ORDER_STATUS_OPTIONS,
   PAYMENT_STATUS_OPTIONS,
   TRACKING_FILTER_OPTIONS,
 } from '@/lib/sales'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 
 const paymentStatuses = ['all', ...PAYMENT_STATUS_OPTIONS]
 const orderStatuses = ['all', ...ORDER_STATUS_OPTIONS]
@@ -60,6 +61,7 @@ const PAGE_SIZE_OPTIONS = ['10', '25', '50']
 function Orders() {
   const location = useLocation()
   const navigate = useNavigate()
+  const formatCurrency = useFormatCurrency()
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -440,8 +442,6 @@ function Orders() {
                 const itemCount = getNumberValue(order?.items?.length, order?.orderItems?.length, 0)
                 const orderNumber = getOrderDisplayNumber(order, id)
                 const trackingAvailable = hasOrderTracking(order)
-                const allowedOrderStatusOptions = getAllowedOrderStatusOptions(orderStatus)
-
                 return (
                   <tr key={id} className="align-top text-slate-700 dark:text-slate-300">
                     <td className="min-w-[10rem]">
@@ -477,7 +477,7 @@ function Orders() {
                       <div className="space-y-1">
                         <ModuleStatusBadge status={paymentStatus} />
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {order?.paymentMethod || 'No payment method recorded'}
+                          {getOrderPaymentMethodLabel(order) || 'No payment method recorded'}
                         </p>
                       </div>
                     </td>

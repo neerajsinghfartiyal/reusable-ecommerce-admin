@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   closeReturnRequest,
+  createReplacementOrder,
   getReturnRequestById,
+  linkReplacementOrder,
   updateReturnRequestStatus,
 } from '../api/returnApi'
 import { getActivityLogs } from '../api/activityLogApi'
@@ -24,16 +26,19 @@ import { adminLinkButtonClass } from '@/components/admin-ui/adminStyles'
 import {
   extractEntity,
   extractList,
-  formatCurrency,
   formatDateTime,
   getCustomerDisplayName,
   getOrderFulfillment,
+  getReplacementOrderId,
+  getReplacementOrderNumber,
   RETURN_STATUS_OPTIONS,
 } from '@/lib/sales'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 
 function ReturnDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const formatCurrency = useFormatCurrency()
 
   const [request, setRequest] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -48,6 +53,9 @@ function ReturnDetails() {
   const [activityLogs, setActivityLogs] = useState([])
   const [activityLoading, setActivityLoading] = useState(true)
   const [activityError, setActivityError] = useState('')
+  const [creatingReplacement, setCreatingReplacement] = useState(false)
+  const [linkingReplacement, setLinkingReplacement] = useState(false)
+  const [replacementOrderInput, setReplacementOrderInput] = useState('')
 
   const loadReturnRequest = async () => {
     if (!id) return
@@ -121,6 +129,45 @@ function ReturnDetails() {
     }
   }
 
+  const handleCreateReplacementOrder = async () => {
+    if (!id) return
+
+    setCreatingReplacement(true)
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      await createReplacementOrder(id)
+      setSuccessMessage('Replacement order created successfully.')
+      await loadReturnRequest()
+      await loadActivity()
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to create replacement order.')
+    } finally {
+      setCreatingReplacement(false)
+    }
+  }
+
+  const handleLinkReplacementOrder = async () => {
+    if (!id || !replacementOrderInput.trim()) return
+
+    setLinkingReplacement(true)
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      await linkReplacementOrder(id, replacementOrderInput.trim())
+      setReplacementOrderInput('')
+      setSuccessMessage('Replacement order linked successfully.')
+      await loadReturnRequest()
+      await loadActivity()
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to link replacement order.')
+    } finally {
+      setLinkingReplacement(false)
+    }
+  }
+
   const handleCloseRequest = async () => {
     if (!id) return
 
@@ -187,7 +234,16 @@ function ReturnDetails() {
   const items = Array.isArray(request?.items) ? request.items : []
   const maxRefundAmount = Number(request?.order?.totalAmount || 0)
   const isClosed = status === 'closed'
+  const isExchange = type === 'exchange'
+  const replacementOrderId = getReplacementOrderId(request || {})
+  const replacementOrderNumber = getReplacementOrderNumber(request || {})
+  const canManageReplacement =
+    isExchange &&
+    !isClosed &&
+    !replacementOrderId &&
+    ['approved', 'received'].includes(status)
   const linkedOrderFulfillment = getOrderFulfillment(request?.order || {})
+  const replacementOrderFulfillment = getOrderFulfillment(request?.replacementOrder || {})
   const itemColumns = [
     { key: 'product', label: 'Product' },
     { key: 'sku', label: 'SKU' },
@@ -234,6 +290,18 @@ function ReturnDetails() {
       {selectedStatus === 'refunded' && Number(refundAmount || 0) > maxRefundAmount ? (
         <AdminAlert type="warning" title="Refund exceeds order total">
           Refund amounts cannot exceed the linked order total of {formatCurrency(maxRefundAmount)}.
+        </AdminAlert>
+      ) : null}
+
+      {isExchange && selectedStatus === 'exchanged' && !replacementOrderId ? (
+        <AdminAlert type="warning" title="Replacement order required">
+          Create or link a replacement order before marking this exchange as exchanged.
+        </AdminAlert>
+      ) : null}
+
+      {type === 'return' && selectedStatus === 'exchanged' ? (
+        <AdminAlert type="warning" title="Invalid status for return">
+          Refund-only return requests should use the refunded status instead of exchanged.
         </AdminAlert>
       ) : null}
 
@@ -323,6 +391,83 @@ function ReturnDetails() {
           </div>
         </ModuleCard>
       </div>
+
+      {isExchange ? (
+        <ModuleCard
+          title="Replacement Order"
+          description="Exchange requests need a replacement order before they can be marked as exchanged."
+          actions={
+            replacementOrderId ? (
+              <Link to={`/orders/${replacementOrderId}`} className={adminLinkButtonClass}>
+                Open replacement order
+              </Link>
+            ) : null
+          }
+        >
+          {replacementOrderId ? (
+            <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+              <p>
+                <strong>Order Number:</strong> {replacementOrderNumber || replacementOrderId}
+              </p>
+              <p>
+                <strong>Order Status:</strong>{' '}
+                {request?.replacementOrder?.orderStatus || 'pending'}
+              </p>
+              <p>
+                <strong>Payment Status:</strong>{' '}
+                {request?.replacementOrder?.paymentStatus || 'paid'}
+              </p>
+              <p>
+                <strong>Fulfillment Status:</strong>{' '}
+                <ModuleStatusBadge status={replacementOrderFulfillment.status || 'unfulfilled'} />
+              </p>
+              <p>
+                <strong>Total:</strong> {formatCurrency(request?.replacementOrder?.totalAmount || 0)}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <AdminAlert type="info" title="No replacement order yet">
+                Approve or receive the exchange, then create a zero-total replacement order from the
+                returned items or link an existing order for this customer.
+              </AdminAlert>
+
+              <ModuleFormGrid columns={2}>
+                <AdminField label="Link existing order ID" className="md:col-span-2">
+                  <Input
+                    value={replacementOrderInput}
+                    disabled={!canManageReplacement || linkingReplacement}
+                    onChange={(event) => setReplacementOrderInput(event.target.value)}
+                    placeholder="Paste an existing order ID to link as replacement"
+                  />
+                </AdminField>
+              </ModuleFormGrid>
+
+              <ModuleActions wrap="wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!canManageReplacement || creatingReplacement}
+                  onClick={handleCreateReplacementOrder}
+                >
+                  {creatingReplacement ? 'Creating...' : 'Create replacement order'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    !canManageReplacement || linkingReplacement || !replacementOrderInput.trim()
+                  }
+                  onClick={handleLinkReplacementOrder}
+                >
+                  {linkingReplacement ? 'Linking...' : 'Link existing order'}
+                </Button>
+              </ModuleActions>
+            </div>
+          )}
+        </ModuleCard>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <ModuleCard title="Update Request Status">

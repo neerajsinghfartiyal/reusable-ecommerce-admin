@@ -26,17 +26,20 @@ import { adminLinkButtonClass } from '@/components/admin-ui/adminStyles'
 import {
   extractEntity,
   extractList,
-  formatCurrency,
   formatDateTime,
   getCustomerDisplayName,
   getNumberValue,
   getOrderDisplayNumber,
   getOrderFulfillment,
   getOrderShipmentAddress,
+  getOrderShippingMethodMeta,
+  getOrderPaymentMethodMeta,
+  isReplacementOrder,
   ORDER_STATUS_OPTIONS,
   PAYMENT_STATUS_OPTIONS,
   RETURN_REQUEST_TYPES,
 } from '@/lib/sales'
+import { useFormatCurrency } from '@/hooks/useFormatCurrency'
 
 const FULFILLMENT_ACTIONS = {
   packed: {
@@ -84,6 +87,7 @@ const getImageUrl = (imagePath) => {
 function OrderDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const formatCurrency = useFormatCurrency()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -410,6 +414,11 @@ function OrderDetails() {
       ? order.orderItems
       : []
   const orderNumber = getOrderDisplayNumber(order)
+  const replacementOrder = isReplacementOrder(order || {})
+  const sourceOrderId = order?.sourceOrder?._id || order?.sourceOrder?.id || order?.sourceOrder || ''
+  const sourceOrderNumber = order?.sourceOrder?.orderNumber || sourceOrderId
+  const linkedReturnRequestId =
+    order?.returnRequest?._id || order?.returnRequest?.id || order?.returnRequest || ''
   const currentPaymentStatus = (order?.paymentStatus || 'pending').toLowerCase()
   const currentOrderStatus = (order?.orderStatus || 'pending').toLowerCase()
   const fulfillment = getOrderFulfillment(order || {})
@@ -424,6 +433,8 @@ function OrderDetails() {
   const orderItemOptions = buildOrderItemOptions(items)
   const customerId = order?.customer?._id || order?.customer?.id || ''
   const address = getOrderShipmentAddress(order || {})
+  const shippingMethodMeta = getOrderShippingMethodMeta(order || {})
+  const paymentMethodMeta = getOrderPaymentMethodMeta(order || {})
   const hasSnapshotAddress = Boolean(
     order?.shippingAddressSnapshot && Object.values(order.shippingAddressSnapshot).some(Boolean),
   )
@@ -498,6 +509,7 @@ function OrderDetails() {
         <ModuleStatusBadge status={currentPaymentStatus} />
         <ModuleStatusBadge status={currentOrderStatus} />
         <ModuleStatusBadge status={currentFulfillmentStatus} />
+        {replacementOrder ? <ModuleStatusBadge status="replacement" /> : null}
         {customerId ? (
           <Link to={`/customers/${customerId}`} className={adminLinkButtonClass}>
             View Customer
@@ -514,6 +526,30 @@ function OrderDetails() {
       {successMessage ? (
         <AdminAlert type="success" title="Success">
           {successMessage}
+        </AdminAlert>
+      ) : null}
+
+      {replacementOrder ? (
+        <AdminAlert type="info" title="Replacement order">
+          This order was created as a replacement shipment.
+          {sourceOrderId ? (
+            <>
+              {' '}
+              Source order:{' '}
+              <Link to={`/orders/${sourceOrderId}`} className={adminLinkButtonClass}>
+                {sourceOrderNumber}
+              </Link>
+            </>
+          ) : null}
+          {linkedReturnRequestId ? (
+            <>
+              {' '}
+              Exchange request:{' '}
+              <Link to={`/returns/${linkedReturnRequestId}`} className={adminLinkButtonClass}>
+                View return
+              </Link>
+            </>
+          ) : null}
         </AdminAlert>
       ) : null}
 
@@ -566,6 +602,26 @@ function OrderDetails() {
 
         <ModuleCard title="Shipping Snapshot">
           <div className="space-y-2 text-sm text-slate-700 dark:text-slate-200">
+            <p>
+              <strong>Shipping Method:</strong>{' '}
+              {shippingMethodMeta.label || 'Not recorded (legacy order)'}
+            </p>
+            {shippingMethodMeta.code ? (
+              <p>
+                <strong>Method Code:</strong> {shippingMethodMeta.code}
+              </p>
+            ) : null}
+            {shippingMethodMeta.type ? (
+              <p>
+                <strong>Method Type:</strong>{' '}
+                {shippingMethodMeta.type.replace(/_/g, ' ')}
+              </p>
+            ) : null}
+            {shippingMethodMeta.instructions ? (
+              <p>
+                <strong>Instructions:</strong> {shippingMethodMeta.instructions}
+              </p>
+            ) : null}
             <p>
               <strong>Recipient:</strong>{' '}
               {[address?.firstName, address?.lastName].filter(Boolean).join(' ') || customerName}
@@ -684,13 +740,19 @@ function OrderDetails() {
                 </AdminSelect>
               </AdminField>
 
-              <AdminField label="Payment Method">
+              <AdminField label="Payment Method Note">
                 <Input
                   value={paymentMethod}
                   onChange={(event) => setPaymentMethod(event.target.value)}
-                  placeholder="card, bank transfer, COD..."
+                  placeholder="Optional override or legacy payment note"
                 />
               </AdminField>
+              {paymentMethodMeta.label ? (
+                <p className="md:col-span-2 text-xs text-slate-500 dark:text-slate-400">
+                  Structured checkout method: {paymentMethodMeta.label}
+                  {paymentMethodMeta.code ? ` (${paymentMethodMeta.code})` : ''}
+                </p>
+              ) : null}
 
               <AdminField label="Payment Reference">
                 <Input
@@ -878,13 +940,30 @@ function OrderDetails() {
               </p>
               <p>
                 <strong>Shipping:</strong> {formatCurrency(shippingAmount)}
+                {shippingMethodMeta.label ? ` (${shippingMethodMeta.label})` : ''}
               </p>
               <p>
                 <strong>Discount:</strong> {formatCurrency(discountAmount)}
               </p>
               <p>
-                <strong>Payment Method:</strong> {order?.paymentMethod || 'Not recorded'}
+                <strong>Payment Method:</strong>{' '}
+                {paymentMethodMeta.label || order?.paymentMethod || 'Not recorded (legacy order)'}
               </p>
+              {paymentMethodMeta.code ? (
+                <p>
+                  <strong>Payment Code:</strong> {paymentMethodMeta.code}
+                </p>
+              ) : null}
+              {paymentMethodMeta.provider ? (
+                <p>
+                  <strong>Provider:</strong> {paymentMethodMeta.provider.replace(/_/g, ' ')}
+                </p>
+              ) : null}
+              {paymentMethodMeta.instructions ? (
+                <p>
+                  <strong>Payment Instructions:</strong> {paymentMethodMeta.instructions}
+                </p>
+              ) : null}
               <p>
                 <strong>Payment Reference:</strong> {order?.paymentReference || 'Not recorded'}
               </p>
